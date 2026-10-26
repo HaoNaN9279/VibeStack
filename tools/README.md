@@ -1,65 +1,54 @@
 # Tool packages
 
-Custom tools are a first-class layer. Capability groups reference tool ids; they
-do not own tool definitions.
+工具包是可执行能力的唯一载体。能力组只引用工具 ID，不拥有工具定义。
 
 ```text
 tools/<name>/<version>/tool.json
 ```
-
-`tool.json`:
 
 ```json
 {
   "schema_version": 1,
   "guid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "name": "query-sales",
+  "tool_name": "query_sales",
   "version": "0.1.0",
   "description": "Query sales data",
   "provider": "python",
-  "entrypoint": "tool.py:build_tool",
+  "entrypoint": "query_sales:main",
   "permissions": ["fs"],
-  "idempotent": true
+  "idempotent": true,
+  "source": { "type": "local" },
+  "run": { "kind": "uv", "command": "query-sales" },
+  "mcp": null
 }
 ```
 
-- `guid`: 32 lowercase hex characters.
-- `name`: package slug.
-- `provider`: `python`, `mcp`, `builtin`, `sandbox`, or `app`.
-- `python`: `entrypoint` is `<file>:<attribute>`; the attribute must be a
-  `BaseTool` or a zero-argument factory returning one.
-- `mcp`: `server` and `tool` are required.
-- `builtin` / `sandbox`: `tool` is required.
-- `app`: `app` (or `tool`) is required.
-- `permissions`: subset of `fs`, `net`, `exec`, `secrets`.
+- `guid`：32 位小写十六进制，所有版本保持不变。
+- `name` / `version`：必须与目录名一致。
+- `provider`：`python`、`mcp`、`builtin`、`sandbox`、`app`。
+- `python`：`entrypoint` 为 `<module>:<attr>`；`run` 描述 `uv` 命令。
+- `mcp`：MCP 服务器配置，由 Agent 插件注入。
+- `permissions`：`fs`、`net`、`exec`、`secrets` 的子集。
 
-Tool packages are public-only. User-scoped Python tool packages are intentionally
-rejected because they would execute user code inside the Gateway process.
-
-Capability group `group.json` references tools:
+能力组引用：
 
 ```json
 {
-  "tools": [
-    "builtin:read_file",
-    "mcp:github:search_repositories",
-    "tool:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@v0.1.0"
-  ],
+  "tools": ["tool:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@v0.1.0"],
   "tool_permissions": {
-    "mcp:github:search_repositories": ["net"]
+    "tool:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@v0.1.0": ["fs"]
   }
 }
 ```
 
-Canonical ids:
+统一入口：
 
-```text
-tool:<guid>@v<version>
-mcp:<server>:<tool>
-builtin:<name>
-sandbox:<name>
-app:<name>
+```bash
+vibe-stack tool list
+vibe-stack tool run <tool> -- <args>
+vibe-stack tool serve <tool>
+vibe-stack tool exec <tool> -- python -m <module>
 ```
 
-MCP server transport, credentials, and enablement remain in
-`extensions_config.json`; capability groups only reference discovered tools.
+GitHub 来源的工具必须记录 `source.url`、`source.commit`、`source.tag`。

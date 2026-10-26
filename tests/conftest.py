@@ -1,0 +1,115 @@
+"""Test fixtures for VibeStack."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+
+def _write_json(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """Build a minimal VibeStack repository fixture."""
+    root = tmp_path / "repo"
+    _write_json(
+        root / "capability-groups/core/0.1.0/group.json",
+        {
+            "guid": "a" * 32,
+            "name": "core",
+            "version": "0.1.0",
+            "description": "core",
+            "permissions": ["fs"],
+            "extends": [],
+            "tools": ["tool:" + "b" * 32 + "@v0.1.0"],
+        },
+    )
+    _write(root / "capability-groups/core/0.1.0/rules/00-global.md", "# global\n")
+    _write(
+        root / "capability-groups/core/0.1.0/agents/helper.md",
+        "---\nname: Helper\ndescription: helper agent\nmode: subagent\n---\n\n# Helper\n",
+    )
+    _write(root / "capability-groups/core/0.1.0/skills/core-skill/SKILL.md", "# Core skill\n")
+
+    _write_json(
+        root / "capability-groups/data/1.0.0/group.json",
+        {
+            "guid": "c" * 32,
+            "name": "data",
+            "version": "1.0.0",
+            "description": "data group",
+            "permissions": ["fs"],
+            "extends": ["base"],
+            "tools": ["tool:" + "d" * 32 + "@v0.1.0"],
+        },
+    )
+    _write(root / "capability-groups/data/1.0.0/rules/data.md", "# data\n")
+
+    _write_json(
+        root / "capability-groups/base/1.0.0/group.json",
+        {
+            "guid": "e" * 32,
+            "name": "base",
+            "version": "1.0.0",
+            "description": "base group",
+            "permissions": ["fs"],
+            "extends": [],
+            "tools": [],
+        },
+    )
+    _write(root / "capability-groups/base/1.0.0/rules/base.md", "# base\n")
+
+    for guid, name, version in (
+        ("b" * 32, "mcp-tool", "0.1.0"),
+        ("d" * 32, "demo-tool", "0.1.0"),
+    ):
+        _write_json(
+            root / f"tools/{name}/{version}/tool.json",
+            {
+                "schema_version": 1,
+                "guid": guid,
+                "name": name,
+                "tool_name": name,
+                "version": version,
+                "description": f"{name} description",
+                "provider": "mcp",
+                "permissions": ["net"],
+                "mcp": {"name": name.replace("-", "_"), "type": "remote", "url": "http://example.test/mcp"},
+            },
+        )
+
+    _write_json(
+        root / "plugins/opencode/plugin.json",
+        {
+            "schema_version": 1,
+            "name": "opencode",
+            "agent": "opencode",
+            "version": "0.1.0",
+            "entrypoint": "index.ts",
+            "install": {
+                "kind": "copy",
+                "target": "~/.config/opencode/plugins/vibestack.ts",
+                "skills_target": "~/.config/opencode/plugins/vibestack-skills",
+            },
+        },
+    )
+    _write(root / "plugins/opencode/index.ts", "export const Plugin = async () => ({})\n")
+    _write(root / "plugins/opencode/skills/vibestack/SKILL.md", "# guide\n")
+    return root
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Path:
+    root = tmp_path / "project"
+    root.mkdir()
+    return root

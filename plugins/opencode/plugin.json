@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "opencode",
+  "agent": "opencode",
+  "version": "0.1.0",
+  "entrypoint": "index.ts",
+  "install": {
+    "kind": "copy",
+    "target": "~/.config/opencode/plugins/vibestack.ts",
+    "skills_target": "~/.config/opencode/plugins/vibestack-skills"
+  },
+  "capabilities": ["rules", "agents", "commands", "skills", "mcp", "tools"]
+}

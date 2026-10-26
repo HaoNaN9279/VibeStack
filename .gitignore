@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Tool environments and build artifacts
+tools/*/*/.venv/
+tools/*/*/dist/
+tools/*/*/build/
+tools/*/*/*.egg-info/
+tools/video-transcribe/*/models/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
