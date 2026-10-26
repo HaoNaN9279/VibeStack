@@ -1,0 +1,10 @@
+{
+  "guid": "11111111111111111111111111111111",
+  "name": "document-pipeline",
+  "version": "0.1.0",
+  "description": "????????????",
+  "permissions": [
+    "fs"
+  ],
+  "extends": []
+}

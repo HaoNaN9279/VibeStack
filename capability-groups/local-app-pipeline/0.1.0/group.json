@@ -1,0 +1,11 @@
+{
+  "guid": "33333333333333333333333333333333",
+  "name": "local-app-pipeline",
+  "version": "0.1.0",
+  "description": "??????????????????",
+  "permissions": [
+    "fs",
+    "exec"
+  ],
+  "extends": []
+}
