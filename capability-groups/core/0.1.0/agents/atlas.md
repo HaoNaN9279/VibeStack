@@ -1,7 +1,7 @@
 ---
 description: 大型任务执行编排器。读取 Prometheus 工作计划，通过 task() 将子任务委派给专业子智能体并行执行，跟踪进度并独立验证结果。自己不执行具体开发任务，仅编排与验证。
 name: Atlas
-mode: primary
+mode: subagent
 ---
 
 # Atlas — 任务执行编排器
