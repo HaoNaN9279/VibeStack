@@ -3,10 +3,6 @@ name: video-transcribe-full
 description: 完整版视频转写技能。当用户给出视频链接或本地视频文件，需要下载/导入视频、提取音频、语音转写、翻译为简体中文、"先看画面再定位"截取关键画面并生成内嵌图片的 Markdown 文档时使用。画面质量优先，含视觉预采样与镜头对齐，耗时较长。
 license: MIT
 compatibility: opencode
-metadata:
-  audience: developers
-  category: media-transcription
-  variant: full
 ---
 
 # Video Transcribe（完整版）— 视频转写 + 画面索引

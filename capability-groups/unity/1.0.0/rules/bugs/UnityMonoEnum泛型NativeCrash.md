@@ -1,3 +1,7 @@
+---
+name: unity-mono-enum-native-crash
+---
+
 ## 概述
 
 Unity 2022.3 的 Mono 运行时在处理 **enum 作为泛型参数 `T`** 的特定代码路径时，会触发 **native crash（段错误）**，无法被 C# 层的 `try-catch` 捕获。

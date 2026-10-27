@@ -1,3 +1,7 @@
+---
+name: data-forge
+---
+
 # DataForge 使用规则
 
 - 工具入口统一为 `vibe-stack`，不要依赖仓库绝对路径。

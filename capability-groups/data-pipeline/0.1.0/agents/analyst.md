@@ -1,5 +1,7 @@
 ---
+name: analyst
 description: 数据分析智能体
+mode: primary
 ---
 
 # Analyst

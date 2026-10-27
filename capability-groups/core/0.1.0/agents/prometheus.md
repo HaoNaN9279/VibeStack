@@ -1,6 +1,7 @@
 ---
 description: 中大型任务规划顾问。通过结构化面试收集需求，探索代码库，进行意图分类与预分析，编写决策完备的工作计划。计划完成后自动调用 Momus 审核。
 name: Prometheus
+mode: primary
 ---
 
 # Prometheus — 战略规划师

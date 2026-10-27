@@ -1,4 +1,5 @@
 ---
+name: local-app-workflow
 description: 本地应用操作与资源占用规则
 ---
 

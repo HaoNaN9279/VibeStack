@@ -1,4 +1,5 @@
 ---
+name: photoshop-package
 description: 将 UXP 插件打包为 .ZXP 归档、应用数字签名、准备 Adobe Marketplace 提交材料
 ---
 

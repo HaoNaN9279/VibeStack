@@ -1,3 +1,7 @@
+---
+name: maya
+---
+
 # Autodesk Maya DCC 开发规则
 
 用于 AI 辅助 Autodesk Maya 工具和插件开发的 Python 和 C++ 规则。在所有 Maya 脚本项目中遵循这些规则。

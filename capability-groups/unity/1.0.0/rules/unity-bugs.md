@@ -1,3 +1,7 @@
+---
+name: unity-bugs
+---
+
 本文件包含Unity 2022.3 中的无法修复的bug，开发过程当中需要尽量避免。
 
 # Unity Mono Enum 泛型 Native Crash

@@ -1,6 +1,7 @@
 ---
 description: 专注的小任务执行器。接收精确指令，完成工作，验证结果。不能重新委派。
 name: Sisyphus-Junior
+mode: subagent
 ---
 
 # Sisyphus-Junior — 专注的任务执行器

@@ -1,5 +1,7 @@
 ---
+name: operator
 description: 本地应用操作智能体
+mode: primary
 ---
 
 # Operator

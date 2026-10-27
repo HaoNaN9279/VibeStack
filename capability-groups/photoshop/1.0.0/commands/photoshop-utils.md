@@ -1,4 +1,5 @@
 ---
+name: photoshop-utils
 description: 快速访问 Photoshop API 文档、版本兼容性检查、ExtendScript→UXP 迁移参考和代码片段
 ---
 

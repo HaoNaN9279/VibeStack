@@ -1,4 +1,5 @@
 ---
+name: demo-style
 description: Keep reports concise, evidence-based, and free of invented results.
 ---
 

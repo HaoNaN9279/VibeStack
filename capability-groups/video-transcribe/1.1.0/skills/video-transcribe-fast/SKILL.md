@@ -3,10 +3,6 @@ name: video-transcribe-fast
 description: 快速版视频转写技能。当用户给出视频链接或本地视频文件，需要下载/导入视频、提取音频、语音转写、翻译为简体中文、截取关键画面并生成内嵌图片的 Markdown 文档，且更看重速度时使用。跳过耗时的全片视觉预采样与镜头检测，以「转写→单点截帧→回看修正」流程快速产出可接受的结果。
 license: MIT
 compatibility: opencode
-metadata:
-  audience: developers
-  category: media-transcription
-  variant: fast
 ---
 
 # Video Transcribe（快速版）— 视频转写 + 关键帧

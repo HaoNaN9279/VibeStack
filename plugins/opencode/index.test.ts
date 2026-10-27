@@ -21,12 +21,18 @@ function fixtureRepo(): string {
     path.join(repo, "capability-groups/core/0.1.0/group.json"),
     JSON.stringify({ guid: "a".repeat(32), name: "core", version: "0.1.0", description: "core", tools: [] }),
   )
-  write(path.join(repo, "capability-groups/core/0.1.0/rules/global.md"), "# global\n")
+  write(
+    path.join(repo, "capability-groups/core/0.1.0/rules/global.md"),
+    "---\nname: global\n---\n\n# global\n",
+  )
   write(
     path.join(repo, "capability-groups/core/0.1.0/agents/helper.md"),
     "---\nname: Helper\ndescription: helper\nmode: subagent\n---\n\n# Helper\n",
   )
-  write(path.join(repo, "capability-groups/core/0.1.0/skills/core-skill/SKILL.md"), "# core\n")
+  write(
+    path.join(repo, "capability-groups/core/0.1.0/skills/core-skill/SKILL.md"),
+    "---\nname: core-skill\ndescription: core skill\n---\n\n# core\n",
+  )
   write(
     path.join(repo, "capability-groups/data/1.0.0/group.json"),
     JSON.stringify({
@@ -38,12 +44,18 @@ function fixtureRepo(): string {
       tools: ["tool:" + "c".repeat(32) + "@v0.1.0"],
     }),
   )
-  write(path.join(repo, "capability-groups/data/1.0.0/rules/data.md"), "# data\n")
+  write(
+    path.join(repo, "capability-groups/data/1.0.0/rules/data.md"),
+    "---\nname: data\n---\n\n# data\n",
+  )
   write(
     path.join(repo, "capability-groups/base/1.0.0/group.json"),
     JSON.stringify({ guid: "d".repeat(32), name: "base", version: "1.0.0", description: "base", tools: [] }),
   )
-  write(path.join(repo, "capability-groups/base/1.0.0/commands/run.md"), "---\ndescription: run\n---\n\nrun it\n")
+  write(
+    path.join(repo, "capability-groups/base/1.0.0/commands/run.md"),
+    "---\nname: run\ndescription: run\n---\n\nrun it\n",
+  )
   write(
     path.join(repo, "tools/demo/0.1.0/tool.json"),
     JSON.stringify({
@@ -102,6 +114,140 @@ describe("buildInjection", () => {
     const injection = buildInjection(fixtureRepo(), null, pluginDir)
     expect(injection.instructions).toEqual([])
     expect(injection.skillPaths.length).toBe(1)
+  })
+
+  test("skips agents with missing required frontmatter or invalid mode", () => {
+    const repo = fixtureRepo()
+    write(
+      path.join(repo, "capability-groups/core/0.1.0/agents/missing-mode.md"),
+      "---\nname: MissingMode\ndescription: missing mode\n---\n\n# MissingMode\n",
+    )
+    write(
+      path.join(repo, "capability-groups/core/0.1.0/agents/invalid-mode.md"),
+      "---\nname: InvalidMode\ndescription: invalid mode\nmode: worker\n---\n\n# InvalidMode\n",
+    )
+    const injection = buildInjection(
+      repo,
+      { core: { name: "core", version: "0.1.0" }, groups: [] },
+      import.meta.dir,
+    )
+    expect(injection.agents.MissingMode).toBeUndefined()
+    expect(injection.agents.InvalidMode).toBeUndefined()
+    expect(
+      injection.warnings.some(
+        (warning) =>
+          warning.includes("missing-mode.md") && warning.includes("mode"),
+      ),
+    ).toBe(true)
+    expect(
+      injection.warnings.some(
+        (warning) =>
+          warning.includes("invalid-mode.md") && warning.includes("invalid mode"),
+      ),
+    ).toBe(true)
+  })
+
+  test("requires command name and description and keeps optional agent", () => {
+    const repo = fixtureRepo()
+    write(
+      path.join(repo, "capability-groups/base/1.0.0/commands/no-name.md"),
+      "---\ndescription: no name\n---\n\nbody\n",
+    )
+    write(
+      path.join(repo, "capability-groups/base/1.0.0/commands/no-description.md"),
+      "---\nname: no-description\n---\n\nbody\n",
+    )
+    write(
+      path.join(repo, "capability-groups/base/1.0.0/commands/deploy.md"),
+      "---\nname: deploy\ndescription: deploy\nagent: Helper\n---\n\ndeploy it\n",
+    )
+    const injection = buildInjection(
+      repo,
+      { core: { name: "core", version: "0.1.0" }, groups: [{ name: "base", version: "1.0.0" }] },
+      import.meta.dir,
+    )
+    expect(injection.commands.run.template).toBe("run it")
+    expect(injection.commands.deploy.agent).toBe("Helper")
+    expect(injection.commands["no-name"]).toBeUndefined()
+    expect(injection.commands["no-description"]).toBeUndefined()
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("no-name.md") && warning.includes("name"),
+      ),
+    ).toBe(true)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("no-description.md") && warning.includes("description"),
+      ),
+    ).toBe(true)
+  })
+
+  test("skips rules without name frontmatter", () => {
+    const repo = fixtureRepo()
+    write(
+      path.join(repo, "capability-groups/core/0.1.0/rules/missing-name.md"),
+      "# missing name\n",
+    )
+    const injection = buildInjection(
+      repo,
+      { core: { name: "core", version: "0.1.0" }, groups: [{ name: "data", version: "1.0.0" }] },
+      import.meta.dir,
+    )
+    expect(injection.instructions.length).toBe(2)
+    expect(injection.instructions.some((file) => file.includes("missing-name.md"))).toBe(false)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("missing-name.md") && warning.includes("name"),
+      ),
+    ).toBe(true)
+  })
+
+  test("skips skills that violate the skill format", () => {
+    const repo = fixtureRepo()
+    const base = path.join(repo, "capability-groups/core/0.1.0/skills")
+    write(path.join(base, "missing/SKILL.md"), "# missing\n")
+    write(
+      path.join(base, "Bad-Name/SKILL.md"),
+      "---\nname: Bad-Name\ndescription: bad name\n---\n\n# bad\n",
+    )
+    write(
+      path.join(base, "mismatch/SKILL.md"),
+      "---\nname: other\ndescription: mismatch\n---\n\n# mismatch\n",
+    )
+    write(
+      path.join(base, "has-metadata/SKILL.md"),
+      "---\nname: has-metadata\ndescription: metadata\nmetadata:\n  foo: bar\n---\n\n# metadata\n",
+    )
+    const injection = buildInjection(
+      repo,
+      { core: { name: "core", version: "0.1.0" }, groups: [] },
+      import.meta.dir,
+    )
+    expect(injection.skillPaths.length).toBe(2)
+    expect(injection.skillPaths.some((dir) => dir.includes("core-skill"))).toBe(true)
+    expect(injection.skillPaths.some((dir) => dir.includes("Bad-Name"))).toBe(false)
+    expect(injection.skillPaths.some((dir) => dir.includes("mismatch"))).toBe(false)
+    expect(injection.skillPaths.some((dir) => dir.includes("has-metadata"))).toBe(false)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("missing") && warning.includes("name"),
+      ),
+    ).toBe(true)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("Bad-Name") && warning.includes("invalid name"),
+      ),
+    ).toBe(true)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("mismatch") && warning.includes("does not match"),
+      ),
+    ).toBe(true)
+    expect(
+      injection.warnings.some(
+        (warning) => warning.includes("has-metadata") && warning.includes("metadata"),
+      ),
+    ).toBe(true)
   })
 })
 

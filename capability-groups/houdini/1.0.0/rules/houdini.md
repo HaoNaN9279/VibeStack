@@ -1,3 +1,7 @@
+---
+name: houdini
+---
+
 # SideFX Houdini DCC 开发规则
 
 用于 AI 辅助 Houdini 工具和 HDA 开发的 Python 和 VEX 规则。在所有 Houdini 脚本项目中遵循这些规则。

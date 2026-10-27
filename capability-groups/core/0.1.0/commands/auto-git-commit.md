@@ -1,4 +1,5 @@
 ---
+name: auto-git-commit
 description: commit 当前项目变更（含 submodules 支持）
 ---
 

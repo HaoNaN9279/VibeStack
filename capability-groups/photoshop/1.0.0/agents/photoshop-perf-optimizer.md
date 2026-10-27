@@ -1,4 +1,5 @@
 ---
+name: photoshop-perf-optimizer
 description: 面向 PS 2022-2026 的 ExtendScript、UXP 和 C++ SDK 插件性能分析、瓶颈识别和优化指导
 mode: subagent
 ---

@@ -1,3 +1,7 @@
+---
+name: blender
+---
+
 # Blender DCC 开发规则
 
 用于 AI 辅助 Blender 插件和工具开发的 Python 规则。在所有 Blender 脚本项目中遵循这些规则。

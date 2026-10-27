@@ -1,3 +1,7 @@
+---
+name: photoshop
+---
+
 # Photoshop DCC 开发规则
 
 适用于使用 ExtendScript (.jsx)、UXP (.psjs + manifest.json) 和 C++ SDK (.cpp/.h) 进行 AI 辅助 Photoshop 插件和工具开发的规则。在每个 Photoshop 脚本项目中都应遵循。目标版本：Photoshop 2022–2026 (v23–v27)。**禁止：伪造 API 签名。所有 ExtendScript、UXP 和 C++ SDK API 引用必须能够在 Adobe 文档中得到验证。**

@@ -1,22 +1,18 @@
 ---
 name: custom-command
-description: 当用户需要创建或管理 OpenCode 自定义命令（Command）时使用
+description: 当用户需要创建或管理 VibeStack 自定义命令（Command）时使用
 license: MIT
-compatibility: opencode
-metadata:
-  audience: contributors
-  category: configuration
 ---
 
 # Custom Command — 命令制作指南
 
-指导你创建和管理 OpenCode 自定义命令。自定义命令通过斜杠 `/` 触发，执行预定义的提示词模板，用于处理重复性任务。
+指导你创建和管理 VibeStack 自定义命令。能力组中的命令定义与具体 Agent 工具解耦，由适配器转换后注入，执行预定义的提示词模板。
 
 ---
 
 ## 1. 命令概述
 
-自定义命令是内置命令（如 `/init`、`/undo`、`/redo`、`/share`、`/help`）的补充。在 TUI 中输入 `/` 后跟命令名称即可触发。
+自定义命令是 Agent 内置操作的补充。多数 Agent 通过 `/` 后跟命令名称触发；具体入口和触发方式由适配器决定。
 
 ---
 
@@ -24,55 +20,57 @@ metadata:
 
 ### 确定添加内容的位置
 
-当用户描述添加内容时，按以下规则确定存放位置的层级：
-
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
 - **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
-- **"为当前项目添加内容"** 或类似描述 → `.opencode/` 目录（项目专属配置）
-- **"为本地用户配置" / "为本地用户"** 或类似描述 → `~/.config/opencode/` 目录（用户本地配置）
+- **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
+
+VibeStack 不写入任何 Agent 的专有配置目录，也不复制或链接内容到这些目录。项目级内容只通过 `.vibestack/stack.json` 激活能力组生效。
 
 ### 2.1 核心命令（全局可用）
 
 放置在 `capability-groups/core/0.1.0/commands/` 目录下。
 
-```
+```text
 capability-groups/core/0.1.0/commands/
-  └── <command-name>.md      # 全局命令定义
+└── <command-name>.md      # 全局命令定义
 ```
 
 ### 2.2 领域命令（领域专属）
 
 放置在 `capability-groups/<group>/<version>/commands/` 目录下。
 
-```
+```text
 capability-groups/<group>/<version>/
-  commands/
-    ├── <domain>-process.md    # 领域处理命令
-    ├── <domain>-export.md     # 导出命令
-    ├── <domain>-prompt.md     # 提示管理命令
-    └── <domain>-utils.md      # 工具命令
+commands/
+├── <domain>-process.md    # 领域处理命令
+├── <domain>-export.md     # 导出命令
+├── <domain>-prompt.md     # 提示管理命令
+└── <domain>-utils.md      # 工具命令
 ```
 
 ### 2.3 项目命令（项目专属）
-放置在 `.opencode/commands/` 目录下。
+
+在 `capability-groups/<group>/<version>/commands/` 中定义，然后在项目根目录激活能力组：
+
+```bash
+vibe-stack activate <group>
+vibe-stack sync
 ```
-.opencode/commands/
-  └── <command-name>.md      # 项目命令定义
-```
+
+激活只修改 `.vibestack/stack.json`，不向项目写入命令文件。
 
 ---
 
 ## 3. 命令定义方式
 
-文件名即为命令名称。例如 `test.md` 创建 `/test` 命令。
+每个命令文件必须以 YAML frontmatter 开头，frontmatter **必须包含** `name`、`description` 两个字段；`agent` 可选。
 
 ```markdown
 ---
-description: 命令的简要描述（在 TUI 中显示）
-agent: build|plan|<agent-name>      # 可选：指定执行代理
-model: provider/model-id            # 可选：覆盖模型
-subtask: true|false                 # 可选：强制作为子代理运行
+name: command-name                  # 必填：命令名称，建议与文件名一致
+description: 命令的简要描述（在命令列表中显示） # 必填
+agent: <agent-name>                 # 可选：指定执行代理
 ---
 
 这里是命令的提示词模板内容。支持：
@@ -82,23 +80,35 @@ subtask: true|false                 # 可选：强制作为子代理运行
 - @filename — 文件引用
 ```
 
+文件名建议与 `name` 一致：`test.md` → `name: test` → `/test`。
+
+适配器注入规则：
+
+- `name`、`description`、`agent` 映射为目标 Agent 的命令配置。
+- 正文作为命令模板。
+- 缺少 `name` 或 `description` 的命令会被跳过并产生告警。
+- 无法映射的字段不注入。
+
 ---
 
 ## 4. 提示词模板语法
 
+模板正文由适配器解释。以下为常见约定，具体支持范围以目标适配器为准。
+
 ### 4.1 参数绑定
 
-```
+```text
 $ARGUMENTS     # 所有参数的原始字符串
 $1             # 第一个参数
 $2             # 第二个参数
-$3             # 第三个参数...以此类推
+$3             # 第三个参数，以此类推
 ```
 
 示例（`component.md`）：
 
 ```markdown
 ---
+name: component
 description: Create a new React component
 ---
 
@@ -114,6 +124,7 @@ Include proper typing and basic structure.
 
 ```markdown
 ---
+name: analyze-coverage
 description: Analyze test coverage
 ---
 
@@ -125,6 +136,7 @@ Based on these results, suggest improvements to increase coverage.
 
 ```markdown
 ---
+name: review-changes
 description: Review recent changes
 ---
 
@@ -142,6 +154,7 @@ Review these changes and suggest any improvements.
 
 ```markdown
 ---
+name: review-component
 description: Review component
 ---
 
@@ -153,70 +166,70 @@ Check for performance issues and suggest improvements.
 
 ---
 
-## 5. 配置选项详解
+## 5. 配置选项
 
 | 选项 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `template` / 内容 | string | **是** | 执行时发送给 LLM 的提示词 |
-| `description` | string | 推荐 | 命令功能的简要描述，TUI 中显示 |
-| `agent` | string | 否 | 指定执行命令的代理。subagent 默认触发子代理调用 |
-| `subtask` | boolean | 否 | 强制触发子代理调用（即使 agent 配置为 primary） |
-| `model` | string | 否 | 覆盖此命令的默认模型 |
+| `name` | string | 是 | 命令名称，建议与文件名一致 |
+| `description` | string | 是 | 命令功能的简要描述，命令列表中显示 |
+| `agent` | string | 否 | 指定执行命令的代理 |
+| 正文 | string | 是 | 执行时发送给 LLM 的提示词模板 |
 
 ---
 
 ## 6. 命令制作示例
 
-### 6.1 完整领域命令示例（`capability-groups/data-forge/1.0.0/commands/data-forge-process.md`）
+### 6.1 核心命令示例（`capability-groups/core/0.1.0/commands/auto-git-commit.md`）
 
 ```markdown
 ---
+name: auto-git-commit
+description: commit 当前项目变更（含 submodules 支持）
+---
+
+# `/auto-git-commit` — 自动 Git 提交
+
+根据当前项目的 Git 变更，写出规范的 commit message 并提交，不推送到远程。
+
+## Step 1: 检查变更
+
+运行 `git status` 和 `git diff`，确认待提交内容。
+
+## Step 2: 提交
+
+按项目约定生成 commit message，执行提交。
+
+## Step 3: 报告
+
+输出提交哈希与变更摘要。
+```
+
+### 6.2 领域命令示例（`capability-groups/data-forge/1.0.0/commands/data-forge-process.md`）
+
+```markdown
+---
+name: data-forge-process
 description: Execute AI data processing pipelines: resize, remove-bg, batch
 ---
 
 # `/data-forge-process` — Image Processing Pipeline
 
-> 这是一份指导文档，指导 AI 智能体如何执行图像处理流水线。
-
 ## 1. Usage
 
-```
-/data-forge-process resize --input-dir <path> --output-dir <path> --width <px> --height <px>
+/data-forge-process resize --input-dir <path> --output-dir <path>
 /data-forge-process remove-bg --input-dir <path> --output-dir <path>
 /data-forge-process batch --input-dir <path> --output-dir <path>
-```
 
-## 2. Parameters
-
-| Parameter | Required | Description |
-|---|---|---|
-| `--input-dir` | Yes | Directory containing source images |
-| `--output-dir` | Yes | Directory for output images |
-
-## 3. Execution Steps
-
-### 3.1 resize — Batch Image Resize
+## 2. Execution Steps
 
 1. Validate input directory exists
-2. Invoke resize tool with parameters
+2. Invoke the data-forge tool with parameters
 3. Report results
 
-## 4. Notes
+## 3. Notes
 
-- No GPU execution — this command provides guidance only
 - Pipeline stages are atomic
-```
-
-### 6.2 使用别名优化
-
-为常用复杂命令创建短别名：
-
-```markdown
----
-description: 快捷别名 - data-forge process
----
-
-/data-forge-process $ARGUMENTS
+- Tool access goes through `vibe-stack tool run data-forge -- <args>`
 ```
 
 ---
@@ -246,7 +259,6 @@ description: 快捷别名 - data-forge process
 
 ### 7.3 良好实践
 
-- **提供别名**：在说明中包含简短别名
 - **参数验证**：提示 AI 先验证参数再执行
 - **错误处理**：说明可能的错误及处理方式
 - **输出格式**：定义标准化的输出报告格式
@@ -256,18 +268,11 @@ description: 快捷别名 - data-forge process
 
 ## 8. 创建命令的标准流程
 
-```bash
-# 1. 确定命令位置
-# 全局命令 → capability-groups/core/0.1.0/commands/<name>.md
-# 领域命令 → capability-groups/<group>/<version>/commands/<name>.md
-# 项目命令 → .opencode/commands/<name>.md
-
-# 2. 创建命令 Markdown 文件
-echo "---\ndescription: My new command\n---\n\nExecute my command with \$ARGUMENTS" > capability-groups/core/0.1.0/commands/my-command.md
-
-# 3. 编写详细的提示词模板
-
-# 4. 测试
-# 在 TUI 中输入 /my-command 测试
-
+```text
+1. 确定命令位置：core 能力组、领域能力组，或项目能力组
+2. 在能力组的 commands/ 下创建 <name>.md
+3. 编写 YAML frontmatter，必须包含 name、description；agent 可选
+4. 编写提示词模板正文
+5. 若为项目能力组，执行 vibe-stack activate <group> 与 vibe-stack sync
+6. 重启 Agent，通过适配器提供的入口测试
 ```

@@ -1,3 +1,7 @@
+---
+name: caveman-full
+---
+
 # Caveman — Full
 
 > 常驻沟通风格规则。

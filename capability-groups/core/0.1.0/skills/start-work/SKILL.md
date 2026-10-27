@@ -3,9 +3,6 @@ name: start-work
 description: 当用户需要启动 Atlas 执行 Prometheus 工作计划时使用
 license: MIT
 compatibility: opencode
-metadata:
-  audience: contributors
-  category: workflow
 ---
 
 # Start Work — 启动 Atlas 工作会话

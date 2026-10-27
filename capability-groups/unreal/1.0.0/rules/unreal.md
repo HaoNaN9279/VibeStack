@@ -1,3 +1,7 @@
+---
+name: unreal
+---
+
 # Unreal Engine 开发规则
 
 适用于 AI 辅助 Unreal Engine C++ 和 Blueprint 开发的规则。在每个 Unreal 项目中遵守。

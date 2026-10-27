@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url"
 
 export type JsonRecord = Record<string, any>
 
+const AGENT_MODES = new Set(["primary", "subagent", "all"])
+const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
 export interface Injection {
   instructions: string[]
   skillPaths: string[]
@@ -58,6 +61,10 @@ function parseScalar(raw: string): unknown {
       .filter(Boolean)
   }
   return unquote(value)
+}
+
+function frontmatterText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
 }
 
 function unquote(value: string): string {
@@ -157,6 +164,59 @@ function mdFiles(dir: string, recursive = false): string[] {
   return files
 }
 
+function skillDirs(root: string): string[] {
+  if (!existsSync(root) || !statSync(root).isDirectory()) return []
+  const dirs: string[] = []
+  const walk = (dir: string, depth: number): void => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+    if (entries.some((entry) => entry.isFile() && entry.name === "SKILL.md")) {
+      dirs.push(dir)
+      return
+    }
+    if (depth >= 6) return
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith(".")) {
+        walk(path.join(dir, entry.name), depth + 1)
+      }
+    }
+  }
+  walk(root, 0)
+  return dirs.sort()
+}
+
+function collectSkills(root: string, injection: Injection): void {
+  for (const dir of skillDirs(root)) {
+    const name = path.basename(dir)
+    const parsed = parseFrontmatter(readFileSync(path.join(dir, "SKILL.md"), "utf8"))
+    const skillName = frontmatterText(parsed.data.name)
+    const description = frontmatterText(parsed.data.description)
+    const missing = [!skillName && "name", !description && "description"].filter(Boolean)
+    if (missing.length > 0) {
+      injection.warnings.push(
+        `skill ${name} missing required frontmatter: ${missing.join(", ")}`,
+      )
+      continue
+    }
+    if (skillName.length > 64 || !SKILL_NAME.test(skillName)) {
+      injection.warnings.push(`skill ${name} has invalid name: ${skillName}`)
+      continue
+    }
+    if (skillName !== name) {
+      injection.warnings.push(`skill ${name} name does not match directory: ${skillName}`)
+      continue
+    }
+    if (Object.prototype.hasOwnProperty.call(parsed.data, "metadata")) {
+      injection.warnings.push(`skill ${name} must not define metadata`)
+      continue
+    }
+    if (description !== ">" && description !== "|" && description.length > 1024) {
+      injection.warnings.push(`skill ${name} description exceeds 1024 characters`)
+      continue
+    }
+    injection.skillPaths.push(normalize(dir))
+  }
+}
+
 function toolIndex(repo: string): Map<string, JsonRecord> {
   const index = new Map<string, JsonRecord>()
   const base = path.join(repo, "tools")
@@ -194,7 +254,7 @@ export function buildInjection(repo: string | null, stack: JsonRecord | null, pl
     path.join(pluginDir, "vibestack-skills"),
   ]) {
     if (existsSync(candidate)) {
-      injection.skillPaths.push(normalize(candidate))
+      collectSkills(candidate, injection)
       break
     }
   }
@@ -211,27 +271,64 @@ export function buildInjection(repo: string | null, stack: JsonRecord | null, pl
 
   for (const group of groups) {
     const root = String(group.root)
-    injection.instructions.push(...mdFiles(path.join(root, "rules"), true).map(normalize))
+    for (const file of mdFiles(path.join(root, "rules"), true)) {
+      const parsed = parseFrontmatter(readFileSync(file, "utf8"))
+      const name = frontmatterText(parsed.data.name)
+      if (!name) {
+        injection.warnings.push(
+          `rule ${path.basename(file)} missing required frontmatter: name`,
+        )
+        continue
+      }
+      injection.instructions.push(normalize(file))
+    }
 
-    const skills = path.join(root, "skills")
-    if (existsSync(skills)) injection.skillPaths.push(normalize(skills))
+    collectSkills(path.join(root, "skills"), injection)
 
     for (const file of mdFiles(path.join(root, "agents"))) {
       const parsed = parseFrontmatter(readFileSync(file, "utf8"))
-      const name = String(parsed.data.name || path.basename(file, ".md"))
+      const name = frontmatterText(parsed.data.name)
+      const description = frontmatterText(parsed.data.description)
+      const mode = frontmatterText(parsed.data.mode)
+      const missing = [
+        !name && "name",
+        !description && "description",
+        !mode && "mode",
+      ].filter(Boolean)
+      if (missing.length > 0) {
+        injection.warnings.push(
+          `agent ${path.basename(file)} missing required frontmatter: ${missing.join(", ")}`,
+        )
+        continue
+      }
+      if (!AGENT_MODES.has(mode)) {
+        injection.warnings.push(
+          `agent ${path.basename(file)} has invalid mode: ${mode}`,
+        )
+        continue
+      }
       injection.agents[name] = {
-        description: parsed.data.description,
-        mode: parsed.data.mode,
+        description,
+        mode,
         system: parsed.body,
       }
     }
 
     for (const file of mdFiles(path.join(root, "commands"))) {
       const parsed = parseFrontmatter(readFileSync(file, "utf8"))
-      const name = String(parsed.data.name || path.basename(file, ".md"))
+      const name = frontmatterText(parsed.data.name)
+      const description = frontmatterText(parsed.data.description)
+      const agent = frontmatterText(parsed.data.agent)
+      const missing = [!name && "name", !description && "description"].filter(Boolean)
+      if (missing.length > 0) {
+        injection.warnings.push(
+          `command ${path.basename(file)} missing required frontmatter: ${missing.join(", ")}`,
+        )
+        continue
+      }
       injection.commands[name] = {
-        description: parsed.data.description,
-        agent: parsed.data.agent,
+        description,
+        agent: agent || undefined,
         template: parsed.body,
       }
     }

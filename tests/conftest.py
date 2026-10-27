@@ -18,6 +18,16 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the home directory at the test temp dir."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """Build a minimal VibeStack repository fixture."""
@@ -34,12 +44,18 @@ def repo(tmp_path: Path) -> Path:
             "tools": ["tool:" + "b" * 32 + "@v0.1.0"],
         },
     )
-    _write(root / "capability-groups/core/0.1.0/rules/00-global.md", "# global\n")
+    _write(
+        root / "capability-groups/core/0.1.0/rules/00-global.md",
+        "---\nname: global\n---\n\n# global\n",
+    )
     _write(
         root / "capability-groups/core/0.1.0/agents/helper.md",
         "---\nname: Helper\ndescription: helper agent\nmode: subagent\n---\n\n# Helper\n",
     )
-    _write(root / "capability-groups/core/0.1.0/skills/core-skill/SKILL.md", "# Core skill\n")
+    _write(
+        root / "capability-groups/core/0.1.0/skills/core-skill/SKILL.md",
+        "---\nname: core-skill\ndescription: core skill\n---\n\n# Core skill\n",
+    )
 
     _write_json(
         root / "capability-groups/data/1.0.0/group.json",
@@ -53,7 +69,10 @@ def repo(tmp_path: Path) -> Path:
             "tools": ["tool:" + "d" * 32 + "@v0.1.0"],
         },
     )
-    _write(root / "capability-groups/data/1.0.0/rules/data.md", "# data\n")
+    _write(
+        root / "capability-groups/data/1.0.0/rules/data.md",
+        "---\nname: data\n---\n\n# data\n",
+    )
 
     _write_json(
         root / "capability-groups/base/1.0.0/group.json",
@@ -67,7 +86,10 @@ def repo(tmp_path: Path) -> Path:
             "tools": [],
         },
     )
-    _write(root / "capability-groups/base/1.0.0/rules/base.md", "# base\n")
+    _write(
+        root / "capability-groups/base/1.0.0/rules/base.md",
+        "---\nname: base\n---\n\n# base\n",
+    )
 
     for guid, name, version in (
         ("b" * 32, "mcp-tool", "0.1.0"),

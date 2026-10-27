@@ -1,5 +1,7 @@
 ---
+name: editor
 description: 文档编辑智能体
+mode: primary
 ---
 
 # Editor

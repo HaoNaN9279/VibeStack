@@ -1,57 +1,63 @@
 ---
 name: custom-skill
-description: 当用户需要创建或管理 OpenCode 技能（Skill）时使用
+description: 当用户需要创建或管理 VibeStack 技能（Skill）时使用
 license: MIT
-compatibility: opencode
-metadata:
-  audience: contributors
-  category: configuration
 ---
 
 # Custom Skill — 技能制作指南
 
-指导你在 **opencode-vibe-stack** 项目中创建和管理 OpenCode 技能（Skill）。技能通过 `SKILL.md` 定义可复用的行为指令，智能体可通过原生的 `skill` 工具按需加载。
+指导你在 VibeStack 项目中创建和管理通用技能（Skill）。技能通过 `SKILL.md` 定义可复用的行为指令，支持技能机制的 Agent 可让智能体按需加载。
 
 ---
 
 ## 1. 技能概述
 
-技能是封装在 `SKILL.md` 中的可复用指令集。与规则（自动加载）不同，技能通过 `skill` 工具**按需加载**——智能体可以查看可用技能列表，识别匹配的技能，并在需要时加载完整内容。
+技能是封装在 `SKILL.md` 中的可复用指令集。与规则（自动加载）不同，技能**按需加载**：智能体查看可用技能列表，识别匹配的技能，并在需要时加载完整内容。具体加载机制由适配器决定。
 
 ---
 
-## 2. 在 vibe-stack 中的部署位置
+## 2. 部署位置
 
 ### 确定添加内容的位置
 
-当用户描述添加内容时，按以下规则确定存放位置的层级：
-
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
 - **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
-- **"为当前项目添加内容"** 或类似描述 → `.opencode/` 目录（项目专属配置）
-- **"为本地用户配置" / "为本地用户"** 或类似描述 → `~/.config/opencode/` 目录（用户本地配置）
+- **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
+
+VibeStack 不写入任何 Agent 的专有配置目录，也不复制或链接内容到这些目录。项目级内容只通过 `.vibestack/stack.json` 激活能力组生效。
 
 ### 2.1 核心技能（全局可用）
 
 放置在 `capability-groups/core/0.1.0/skills/` 目录下。
 
-```
+```text
 capability-groups/core/0.1.0/skills/
-  └── <skill-name>/
-      └── SKILL.md
+└── <skill-name>/
+    └── SKILL.md
 ```
 
 ### 2.2 领域技能（领域专属）
 
 放置在 `capability-groups/<group>/<version>/skills/` 目录下。
 
-```
+```text
 capability-groups/<group>/<version>/
-  skills/
-    └── <skill-name>/
-        └── SKILL.md
+skills/
+└── <skill-name>/
+    └── SKILL.md
 ```
+
+### 2.3 项目技能（项目专属）
+
+在 `capability-groups/<group>/<version>/skills/` 中定义，然后在项目根目录激活能力组：
+
+```bash
+vibe-stack activate <group>
+vibe-stack sync
+```
+
+适配器校验能力组内的技能目录，把格式有效的技能目录加入搜索路径；技能目录保持原位置，不复制到项目。
 
 ---
 
@@ -61,10 +67,15 @@ capability-groups/<group>/<version>/
 
 每个技能需要一个独立的目录，目录名即为技能名，目录内包含 `SKILL.md` 文件：
 
-```
+```text
 <skill-name>/
-  └── SKILL.md
+├── SKILL.md
+├── references/      # 可选：补充文档
+├── scripts/         # 可选：辅助脚本
+└── assets/          # 可选：模板、图片、数据
 ```
+
+`references/`、`scripts/` 和 `assets/` 随技能目录一起被发现，不会单独注册。
 
 ### 3.2 Frontmatter（必需）
 
@@ -74,11 +85,9 @@ capability-groups/<group>/<version>/
 ---
 name: skill-name           # 必填：技能名称，符合命名规范
 description: 技能描述      # 必填：长度 1-1024 字符
-license: MIT               # 可选
-compatibility: opencode    # 可选
-metadata:                  # 可选：字符串到字符串的映射
-  audience: contributors
-  category: domain-config
+license: MIT               # 可选：许可证名称或许可证文件
+compatibility: 需要 Python 3.11+ 和 uv  # 可选：环境要求，1-500 字符
+allowed-tools: Bash(git:*) Read         # 可选，实验性：预批准的工具列表
 ---
 ```
 
@@ -99,15 +108,15 @@ metadata:                  # 可选：字符串到字符串的映射
 `description` 必须为 1-1024 个字符。描述句式应为“当用户需要...时使用”，不要只描述是什么。
 
 好的描述示例：
-```
-当用户需要执行ComfyUI任务、图片缩放、图片格式转换、图片填充背景、图片去除背景、标注管理、LLM 生成图片描述时使用
+
+```text
+当用户需要执行 ComfyUI 任务、图片缩放、图片格式转换时使用
 ```
 
 差的描述示例：
-```
+
+```text
 A skill for releases
-```
-```
 数据处理相关工具
 ```
 
@@ -170,13 +179,20 @@ A skill for releases
 
 ```json
 {
+  "guid": "32位小写hex",
   "name": "data-forge",
-  "tools": ["tool:<guid>@v0.2.1"]
+  "version": "0.2.1",
+  "description": "AI 训练数据处理",
+  "extends": [],
+  "tools": ["tool:d0794c942e7050f589ac59d3bc79a4b2@v0.2.1"],
+  "tool_permissions": {
+    "tool:d0794c942e7050f589ac59d3bc79a4b2@v0.2.1": ["fs", "exec", "net"]
+  }
 }
 ```
 
-```markdown
-工具代码位于 `tools/data-forge/0.2.1/`。
+```text
+工具包位于 tools/<name>/<version>/。
 
 调用：vibe-stack tool run <tool> -- <args>
 MCP：vibe-stack tool serve <tool>
@@ -184,46 +200,34 @@ MCP：vibe-stack tool serve <tool>
 
 **编写技能时的检查清单**：
 
+- [ ] frontmatter 包含 `name`、`description`，且 `name` 与目录名一致
 - [ ] 能力组内没有 `tools/` 目录、`pyproject.toml` 或工具源码
 - [ ] `group.json` 的 `tools` 已声明所用工具 ID
 - [ ] `SKILL.md` 不含硬编码的绝对路径
 
 ---
 
-## 7. 创建技能的标准流程
+## 5. 创建技能的标准流程
 
-```bash
-# 1. 确定技能放置位置
-# 全局技能 → capability-groups/core/0.1.0/skills/<skill-name>/SKILL.md
-# 领域技能 → capability-groups/<group>/<version>/skills/<skill-name>/SKILL.md
-# 项目技能 → .opencode/skills/<skill-name>/SKILL.md
-
-# 2. 创建技能目录和文件
-mkdir -p capability-groups/core/0.1.0/skills/my-skill
-touch capability-groups/core/0.1.0/skills/my-skill/SKILL.md
-
-# 3. 编写 frontmatter
-# name: my-skill（目录名一致）
-# description: 清晰具体的描述（1-1024 字符）
-
-# 4. 编写技能内容
-# - 角色定义
-# - 核心工作流
-# - 参数说明
-# - 使用时机
+```text
+1. 确定技能位置：core 能力组、领域能力组，或项目能力组
+2. 在能力组的 skills/ 下创建 <skill-name>/SKILL.md
+3. 编写 frontmatter：name 与目录名一致，description 清晰具体
+4. 编写技能内容：角色、工作流、参数、使用时机
+5. 若为项目能力组，执行 vibe-stack activate <group> 与 vibe-stack sync
+6. 重启 Agent，确认技能出现在可用列表
 ```
 
 ---
 
-## 8. 设计原则与最佳实践
+## 6. 设计原则与最佳实践
 
 - **命名即标识**：技能名称是唯一标识，一旦确定不宜更改
 - **描述即广告**：`description` 是智能体判断是否加载的依据，必须精准
 - **自包含**：一个技能应独立完整，不依赖其他技能
 - **按需加载**：不要用技能替代规则——规则是自动注入的，技能是按需加载的
-- **参数化设计**：支持通过 `name()` 的参数传递上下文信息
+- **不复制内容**：适配器只把技能目录加入搜索路径，技能始终留在能力组内
 - **适度粒度**：太粗（覆盖多个领域）或太细（每个函数一个技能）都不好
-- **版本兼容**：在 `compatibility` 中标注兼容的 OpenCode 版本
 - **用规则约束行为，用技能传授知识**：规则告诉 AI 不该做什么，技能告诉 AI 该怎么做
-- **使用简体中文**：description与提示词都应使用简体中文，保持与用户沟通一致
+- **使用简体中文**：description 与提示词都应使用简体中文，保持与用户沟通一致
 - **尽量精简**：避免冗余和复杂的描述，保持技能内容简洁明了

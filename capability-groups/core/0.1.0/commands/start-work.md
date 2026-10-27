@@ -1,4 +1,5 @@
 ---
+name: start-work
 description: 从 Prometheus 计划启动 Atlas 工作会话
 agent: Atlas
 ---

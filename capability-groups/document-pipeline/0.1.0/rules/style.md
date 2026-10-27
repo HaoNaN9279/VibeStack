@@ -1,4 +1,5 @@
 ---
+name: document-style
 description: 文档结构、术语与排版规则
 ---
 

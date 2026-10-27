@@ -1,6 +1,7 @@
 ---
 description: 文档与代码搜索专家。跨仓库搜索、API 文档查询、实现示例查找、证据溯源。
 name: Librarian
+mode: subagent
 ---
 
 # Librarian — 档案管理员

@@ -2,15 +2,13 @@
 name: custom-tool
 description: 当用户需要创建或管理 VibeStack 工具包时使用
 license: MIT
-compatibility: opencode
-metadata:
-  audience: contributors
-  category: configuration
 ---
 
 # Custom Tool — 工具包制作指南
 
 工具包是可执行能力的唯一载体。能力组只声明引用，不包含工具代码。
+
+---
 
 ## 1. 目录
 
@@ -22,6 +20,8 @@ tools/<name>/<version>/
 ├── tests/                  # 可选
 └── README.md
 ```
+
+---
 
 ## 2. tool.json
 
@@ -46,20 +46,43 @@ tools/<name>/<version>/
 }
 ```
 
-字段：
+---
+
+## 3. 字段说明
 
 | 字段 | 说明 |
 |---|---|
+| `schema_version` | 固定为 `1` |
 | `guid` | 32 位小写十六进制，所有版本保持不变 |
 | `name` / `version` | 必须与目录名一致 |
+| `tool_name` | CLI 或 MCP 使用的工具名，可与 `name` 不同 |
 | `provider` | `python`、`mcp`、`builtin`、`sandbox`、`app` |
 | `entrypoint` | Python 入口，格式 `<module>:<attr>` |
 | `permissions` | `fs`、`net`、`exec`、`secrets` 的子集 |
-| `run` | Python 工具的运行配置：`kind: uv`、`command`、`serve_command` |
+| `idempotent` | 重复执行是否产生相同结果 |
+| `run` | Python 工具运行配置：`kind: uv`、`command`、`serve_command` |
 | `mcp` | 可选 MCP 配置；插件据此注入 MCP |
-| `source` | `local` 或 `git`（含 `url`、`commit`、`tag`） |
+| `source` | `local`、`builtin` 或 `git`（含 `url`、`commit`、`tag`） |
 
-## 3. 能力组引用
+---
+
+## 4. Provider 行为
+
+| provider | CLI | MCP |
+|---|---|---|
+| `python` | `uv run --project <tool-dir> <run.command>` | `uv run --project <tool-dir> <run.serve_command>` |
+| `mcp` | 不支持，提示改用 `tool serve` | 直接执行 `mcp.command` |
+| `builtin` / `sandbox` / `app` | 保留扩展位 | 保留扩展位 |
+
+约束：
+
+- `python` 工具必须包含 `pyproject.toml`。
+- 首次运行自动执行 `uv sync --project <tool-dir>`。
+- 工具 ID 格式：`tool:<guid>@v<version>`。
+
+---
+
+## 5. 能力组引用
 
 ```json
 {
@@ -70,7 +93,9 @@ tools/<name>/<version>/
 }
 ```
 
-## 4. 运行
+---
+
+## 6. 命令
 
 ```bash
 vibe-stack tool list
@@ -79,9 +104,11 @@ vibe-stack tool serve <tool>
 vibe-stack tool exec <tool> -- python -m <module>
 ```
 
-首次运行自动执行 `uv sync --project <tool-dir>`。
+`tool exec` 在工具包的 uv 环境中执行任意命令，要求工具包含 `pyproject.toml`。
 
-## 5. 规则
+---
+
+## 7. 规则
 
 - 不在能力组内放 `pyproject.toml`、`tools/` 或工具源码。
 - 不写死仓库绝对路径；统一通过 `vibe-stack` 调用。

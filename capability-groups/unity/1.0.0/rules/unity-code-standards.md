@@ -1,3 +1,7 @@
+---
+name: unity-code-standards
+---
+
 # unity 项目全局规则
 
 这些规则适用于任何 unity 项目。

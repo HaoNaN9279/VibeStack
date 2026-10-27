@@ -1,6 +1,7 @@
 ---
 description: 多模态内容识别专家。分析图像、PDF 等无法以纯文本读取的媒体文件。
 name: Multimodal-Looker
+mode: subagent
 ---
 
 # Multimodal-Looker — 多模态识别专家

@@ -2,15 +2,13 @@
 name: custom-mcp
 description: 当用户需要创建或管理 VibeStack MCP 工具包时使用
 license: MIT
-compatibility: opencode
-metadata:
-  audience: contributors
-  category: configuration
 ---
 
 # Custom MCP — MCP 工具包制作指南
 
 VibeStack 不保存 `mcp/` 目录。MCP 服务器按**工具包**管理，放在 `tools/<name>/<version>/`，由能力组通过 `tools` 字段引用。
+
+---
 
 ## 1. 目录
 
@@ -21,7 +19,12 @@ tools/<name>/<version>/
 
 MCP 工具包可以没有源码（远程 MCP），也可以包含本地服务代码（本地 MCP）。
 
+---
+
 ## 2. tool.json
+
+必需字段：`schema_version`、`guid`、`name`、`version`、`description`、`provider`。
+MCP 相关配置放在 `mcp` 对象中，`provider` 为 `mcp` 或 `python`。
 
 远程 MCP：
 
@@ -52,8 +55,17 @@ MCP 工具包可以没有源码（远程 MCP），也可以包含本地服务代
 
 ```json
 {
+  "schema_version": 1,
+  "guid": "32位小写hex",
+  "name": "excel-mcp",
+  "tool_name": "excelMCP",
+  "version": "1.0.0",
+  "description": "Excel MCP",
   "provider": "mcp",
   "permissions": ["fs", "exec"],
+  "idempotent": true,
+  "source": { "type": "builtin" },
+  "run": null,
   "mcp": {
     "name": "excelMCP",
     "type": "local",
@@ -69,6 +81,7 @@ Python MCP 服务（与 CLI 共用工具包）：
 {
   "provider": "python",
   "entrypoint": "data_forge.mcp.server:main",
+  "permissions": ["fs", "exec", "net"],
   "run": {
     "kind": "uv",
     "command": "data-forge",
@@ -83,6 +96,8 @@ Python MCP 服务（与 CLI 共用工具包）：
 }
 ```
 
+---
+
 ## 3. 能力组引用
 
 ```json
@@ -96,16 +111,22 @@ Python MCP 服务（与 CLI 共用工具包）：
 
 `guid` 在所有版本中保持不变。`version` 必须与目录名一致。
 
-## 4. 加载
+---
 
-OpenCode 插件读取能力组引用的工具包：
+## 4. 注入
+
+适配器读取能力组引用的工具包：
 
 1. 找到 `tool.json`
-2. 读取 `mcp`
+2. 读取 `mcp` 对象
 3. 注入 `mcp["vibe:<group>_<server>"]`
-4. 不修改 `~/.config/opencode/opencode.json`
+4. 不修改 Agent 主配置文件
+
+`mcp.enabled` 为 `false` 时跳过。不同能力组产生同名 MCP 时，后加载者覆盖。
 
 项目没有 `.vibestack/stack.json` 时不加载任何能力组。
+
+---
 
 ## 5. 调试
 
@@ -115,6 +136,10 @@ vibe-stack tool serve <tool>
 vibe-stack sync
 cat .vibestack/lock.json
 ```
+
+`lock.json` 记录解析后的能力组路径、依赖和工具引用。
+
+---
 
 ## 6. 规则
 

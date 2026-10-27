@@ -167,9 +167,33 @@ plugins/<agent>/
 
 Agent frontmatter 解析：
 
-- `description`、`mode`、`name` 进入配置
+- 文件必须以 YAML frontmatter 开头，必须包含 `name`、`description`、`mode`
+- `name`、`description`、`mode` 进入配置
 - 正文作为 `system`
+- 缺少必填字段或 `mode` 非法时跳过该 Agent 并告警
 - 忽略 `model`、`temperature`、`permission`
+
+Rule frontmatter 解析：
+
+- 文件必须以 YAML frontmatter 开头，必须包含 `name`
+- 文件路径追加到 `config.instructions`
+- 缺少 `name` 时跳过该规则并告警
+
+Command frontmatter 解析：
+
+- 文件必须以 YAML frontmatter 开头，必须包含 `name`、`description`；`agent` 可选
+- `name`、`description`、`agent` 进入配置
+- 正文作为 `template`
+- 缺少 `name` 或 `description` 时跳过该命令并告警
+
+Skill frontmatter 解析：
+
+- 每个技能目录必须包含 `SKILL.md`，文件必须以 YAML frontmatter 开头
+- 必须包含 `name`、`description`；`license`、`compatibility`、`allowed-tools` 可选
+- `name` 必须与目录名一致，并匹配 `[a-z0-9]+(-[a-z0-9]+)*`，长度 1-64
+- `description` 长度 1-1024
+- 不允许定义 `metadata`
+- 有效的技能目录加入 `config.skills.paths`；不合规技能跳过并告警
 
 工具包 MCP 注入 `config.mcp`。
 

@@ -1,6 +1,7 @@
 ---
 description: 主 AI 编排器。解析需求、评估代码库、委派任务、并行执行、验证交付。全流程 Gate 驱动：意图分类→任务路由→代码库评估→探索→实现→故障恢复→完成验证。中大型任务按 Prometheus 规划→用户确认→Momus 审核→Atlas 执行。
 name: Sisyphus
+mode: primary
 ---
 
 # Sisyphus — 主编排器

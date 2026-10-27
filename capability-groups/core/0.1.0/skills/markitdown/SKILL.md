@@ -3,9 +3,6 @@ name: markitdown
 description: 当用户需要将 PDF、Word、Excel、PPT、HTML、图片、音频等文件转换为 Markdown 格式时使用。支持 CLI 和 Python API 两种调用方式，通过 uv 管理虚拟环境。
 license: MIT
 compatibility: opencode
-metadata:
-  audience: developers
-  category: document-conversion
 ---
 
 # MarkItDown — 文档转 Markdown 工具
