@@ -116,7 +116,7 @@ def repo(tmp_path: Path) -> Path:
             "schema_version": 1,
             "name": "opencode",
             "agent": "opencode",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "entrypoint": "index.ts",
             "install": {
                 "kind": "copy",
