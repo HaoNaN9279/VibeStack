@@ -123,6 +123,9 @@ vibe-stack activate data-forge blender
 # 4. 重启 OpenCode
 ```
 
+插件运行依赖 PATH 中的 `vibe-stack`。升级本仓库后需重新执行
+`uv tool install --from . vibe-stack` 和 `vibe-stack plugin install opencode`。
+
 `plugin install` 只写 `~/.config/vibestack/config.json` 和
 `~/.config/opencode/plugins/`，不修改 `opencode.json`。
 
@@ -170,17 +173,25 @@ plugins/opencode/
 └── skills/vibestack/SKILL.md
 ```
 
-OpenCode 插件使用 `config` hook 注入：
+OpenCode 插件启动时调用：
 
-| 能力组内容 | 注入目标 |
-|---|---|
-| `rules/` | `instructions` |
-| `agents/` | `agent` |
-| `commands/` | `command` |
-| `skills/` | `skills.paths` |
-| 工具包的 `mcp` | `mcp` |
+```bash
+vibe-stack resolve --json --project <project>
+```
 
-插件默认加载 `vibestack` 技能，指导 Agent 使用本仓库。
+插件只把解析计划映射到 `config` hook，不自行扫描能力组、选择版本或解析
+frontmatter。`vibe-stack` 必须已安装并在 `PATH` 中。
+
+| 解析计划 | OpenCode v1 | OpenCode v2 |
+|---|---|---|
+| `rules` | `instructions` | `instructions` |
+| `agents` | `agent` | `agents` |
+| `commands` | `command` | `commands` |
+| `skills` | `skills.paths` | `skills` 数组 |
+| `mcp` | `mcp` | `mcp` |
+
+插件默认加载 `vibestack` 技能，指导 Agent 使用本仓库。解析契约见
+[`docs/resolve-api.md`](docs/resolve-api.md)。
 
 安装：
 
@@ -200,6 +211,7 @@ vibe-stack init
 vibe-stack activate <group>[@version]
 vibe-stack deactivate <group>
 vibe-stack sync
+vibe-stack resolve --json
 vibe-stack tool list
 vibe-stack tool run <tool> -- <args>
 vibe-stack tool serve <tool>

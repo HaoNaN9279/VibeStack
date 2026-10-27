@@ -5,18 +5,20 @@ description: 管理 VibeStack 能力组：查看、激活、停用、同步项�
 
 # VibeStack
 
-VibeStack 用能力组组织 AI Agent 配置。OpenCode 插件读取项目 `.vibestack/stack.json`，启动时注入规则、Agent、命令、技能和 MCP。
+VibeStack 用能力组组织 AI Agent 配置。OpenCode 插件调用
+`vibe-stack resolve --json` 获取注入计划，再映射到 Agent 配置；插件不自行
+解析能力组。
 
 ## 前置条件
 
 - `vibe-stack` CLI 在 PATH 中可用。
 - 已运行 `vibe-stack plugin install opencode`（首次使用）。
-- 项目含 `.vibestack/stack.json`。没有该文件时 Core 不加载。
+- 项目有 `.vibestack/stack.json`。没有该文件时 Core 不加载。
 
 ## 加载顺序
 
 1. Core 能力组
-2. `.vibestack/stack.json` 的 `groups` 数组顺序
+2. `.vibestack/stack.json` 中 `groups` 数组顺序
 3. `extends` 依赖先于依赖者
 4. 同名 Agent / 命令 / MCP 后加载者覆盖
 
@@ -29,10 +31,12 @@ vibe-stack info <group>               # 查看组详情
 vibe-stack init                       # 创建 .vibestack/stack.json
 vibe-stack activate <group>[@version] # 激活
 vibe-stack deactivate <group>         # 停用
-vibe-stack sync                       # 校验并写 .vibestack/lock.json
+vibe-stack sync                       # 严格校验并写 .vibestack/lock.json
+vibe-stack resolve --json             # 输出只读注入计划
 ```
 
-激活只修改 `.vibestack/stack.json`，不复制或链接内容到 `.opencode/`。修改后重启 Agent。
+激活只修改 `.vibestack/stack.json`，不复制或链接内容到 `.opencode/`。修改后
+重启 Agent。
 
 ## 工具
 
@@ -64,7 +68,13 @@ vibe-stack tool exec <tool> -- python -m <module>
 ```bash
 vibe-stack status
 vibe-stack sync
+vibe-stack resolve --json
 cat .vibestack/lock.json
 ```
 
-`lock.json` 记录解析后的组路径、依赖和工具引用。常见告警：仓库路径未配置、组版本不存在、工具包缺失、JSON 损坏。
+`lock.json` 记录解析后的组路径、依赖和工具引用。常见告警：`vibe-stack` 未安装
+或超时、API schema 不兼容、仓库路径未配置、组版本不存在、工具包缺失、JSON
+损坏。
+
+插件通过 `vibe-stack resolve --json` 获取注入计划；不要在插件中重复实现组发现、
+版本选择或 frontmatter 解析。

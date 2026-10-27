@@ -5,14 +5,17 @@ description: 使用 VibeStack 能力组、项目 .vibestack 配置和 vibe-stack
 
 # VibeStack
 
-VibeStack 用能力组（capability group）组织 Agent 配置。OpenCode 插件在启动时读取项目 `.vibestack/stack.json`，按顺序注入规则、Agent、命令、技能和 MCP。
+VibeStack 用能力组（capability group）组织 Agent 配置。OpenCode 插件启动时调用
+`vibe-stack resolve --json`，再把返回的注入计划映射到 Agent 配置；插件不自行
+解析能力组。
 
 ## 加载顺序
 
 1. Core 能力组
 2. `.vibestack/stack.json` 中 `groups` 数组顺序
-3. 同一 Agent / 命令 / MCP 名称，后加载者覆盖前者
-4. 规则、技能路径为追加
+3. `extends` 依赖先于依赖者
+4. 同名 Agent / 命令 / MCP 后加载者覆盖
+5. 规则、技能路径追加
 
 项目没有 `.vibestack/stack.json` 时，Core 不加载。
 
@@ -41,7 +44,8 @@ vibe-stack status                     # 查看当前项目激活项
 vibe-stack info <group>               # 查看能力组详情
 vibe-stack activate <group>[@version]
 vibe-stack deactivate <group>
-vibe-stack sync                       # 校验并重写 .vibestack/lock.json
+vibe-stack sync                       # 严格校验并重写 .vibestack/lock.json
+vibe-stack resolve --json             # 输出只读注入计划，供插件消费
 vibe-stack tool list
 vibe-stack tool run <tool> -- <args>
 vibe-stack tool serve <tool>          # MCP stdio
@@ -57,7 +61,8 @@ vibe-stack plugin status opencode
 tool:<guid>@v0.2.1
 ```
 
-不要依赖工具目录的绝对路径。统一通过 `vibe-stack tool run` 或 `vibe-stack tool serve` 调用。首次运行自动执行 `uv sync`。
+不要依赖工具目录的绝对路径。统一通过 `vibe-stack tool run` 或
+`vibe-stack tool serve` 调用。首次运行自动执行 `uv sync`。
 
 ## 扩展能力组
 
@@ -73,7 +78,13 @@ tool:<guid>@v0.2.1
 ```bash
 vibe-stack status
 vibe-stack sync
+vibe-stack resolve --json
 cat .vibestack/lock.json
 ```
 
-`lock.json` 记录了解析后的能力组路径、依赖和工具引用。插件告警通常表示：仓库路径未配置、组版本不存在、工具包缺失或 JSON 损坏。
+`lock.json` 记录解析后的能力组路径、依赖和工具引用。插件告警通常表示：
+`vibe-stack` 未安装或超时、API schema 不兼容、仓库路径未配置、组版本不存在、
+工具包缺失或 JSON 损坏。
+
+插件通过 `vibe-stack resolve --json` 获取注入计划；不要要求插件重新实现组发现、
+版本选择或 frontmatter 解析。

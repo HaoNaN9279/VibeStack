@@ -28,6 +28,7 @@ tests/                                     # pytest
 9. 已发布版本目录不可修改；升级新增版本目录，`guid` 不变。
 10. 工具统一通过 `vibe-stack tool ...` 调用，不写死绝对路径。
 11. 模型参数（model、temperature、permission）不进入能力组 Agent 定义。
+12. 插件通过 `vibe-stack resolve --json` 获取注入计划，不自行解析能力组目录、版本、`extends` 或 frontmatter。
 
 ## Python 规范
 
@@ -44,6 +45,7 @@ tests/                                     # pytest
 - 每个 Agent 一个目录：`plugins/<agent>/`
 - `plugin.json` 描述入口、安装目标和能力
 - OpenCode 插件使用 `config` hook 原地修改配置
+- 插件只消费 `vibe-stack resolve --json`，只做目标 Agent 映射
 - 插件无第三方依赖，失败不得阻断 Agent 启动
 - 安装只复制文件到插件目录，不修改 Agent 配置
 
