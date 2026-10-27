@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -18,12 +19,12 @@ from vibe_stack.project import (
     missing_tools,
     parse_ref,
     read_stack,
-    resolve_order,
     stack_path,
     tools_for_groups,
     write_lock,
 )
 from vibe_stack.repo import find_repo, write_global_config, read_global_config, default_core
+from vibe_stack.resolve import build_plan, resolve_project
 from vibe_stack.tools import exec_in_tool, run_tool
 
 
@@ -46,6 +47,27 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("list", help="list capability groups and tools")
     sub.add_parser("status", help="show project capability groups")
     sub.add_parser("sync", help="resolve the project stack and write lock.json")
+
+    resolve_parser = sub.add_parser(
+        "resolve", help="resolve the project stack into an injection plan"
+    )
+    resolve_parser.add_argument(
+        "--json", action="store_true", help="write the plan as JSON"
+    )
+    resolve_parser.add_argument(
+        "--project",
+        dest="resolve_project",
+        type=Path,
+        default=None,
+        help="project root containing .vibestack",
+    )
+    resolve_parser.add_argument(
+        "--repo",
+        dest="resolve_repo",
+        type=Path,
+        default=None,
+        help="VibeStack repository root",
+    )
 
     init = sub.add_parser("init", help="create .vibestack/stack.json")
     init.add_argument("--core", default="", help="core group as name@version")
@@ -89,7 +111,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        repo = find_repo(args.repo)
+        repo = find_repo(getattr(args, "resolve_repo", None) or args.repo)
+        if getattr(args, "resolve_project", None) is not None:
+            args.project = args.resolve_project
         return _dispatch(args, repo)
     except VibeStackError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -112,6 +136,8 @@ def _dispatch(args: argparse.Namespace, repo: Path) -> int:
         return _deactivate(project, args.groups)
     if args.command == "sync":
         return _sync(repo, project)
+    if args.command == "resolve":
+        return _resolve(repo, project, bool(getattr(args, "json", False)))
     if args.command == "tool":
         return _tool(repo, args)
     if args.command == "plugin":
@@ -207,14 +233,46 @@ def _sync(repo: Path, project: Path) -> int:
     stack = read_stack(project)
     if stack is None:
         raise VibeStackError(f"no {stack_path(project)}; run `vibe-stack init`")
-    groups = resolve_order(repo, stack)
+    plan = build_plan(repo, project, stack, strict=True)
+    groups = plan.group_metas
     missing = missing_tools(repo, groups)
-    path = write_lock(repo, project, stack)
+    path = write_lock(
+        repo,
+        project,
+        stack,
+        groups=groups,
+        fingerprint=plan.fingerprint,
+        warnings=plan.warnings,
+    )
     print(f"resolved {len(groups)} groups")
     print(f"lock: {path}")
     print(f"tools: {len(tools_for_groups(repo, groups))}")
+    for warning in plan.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     for item in missing:
         print(f"warning: missing tool {item}", file=sys.stderr)
+    return 0
+
+
+def _resolve(repo: Path, project: Path, as_json: bool) -> int:
+    plan = resolve_project(repo, project)
+    if as_json:
+        output = json.dumps(plan.to_dict(), ensure_ascii=False, separators=(",", ":"))
+        sys.stdout.buffer.write((output + "\n").encode("utf-8"))
+        sys.stdout.buffer.flush()
+        return 0
+
+    print(f"active: {'true' if plan.active else 'false'}")
+    if plan.core is not None:
+        print(f"core: {plan.core.name}@{plan.core.version}")
+    print(f"groups: {len(plan.groups)}")
+    print(f"rules: {len(plan.rules)}")
+    print(f"skills: {len(plan.skills)}")
+    print(f"agents: {len(plan.agents)}")
+    print(f"commands: {len(plan.commands)}")
+    print(f"mcp: {len(plan.mcp)}")
+    for warning in plan.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     return 0
 
 

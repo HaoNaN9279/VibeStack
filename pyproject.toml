@@ -1,6 +1,6 @@
 [project]
 name = "vibe-stack"
-version = "0.3.0"
+version = "0.4.0"
 description = "Capability groups and tools for multiple AI agent tools"
 requires-python = ">=3.11"
 authors = [{ name = "VibeStack contributors" }]

@@ -26,9 +26,13 @@ def read_global_config() -> dict[str, object]:
     if not path.is_file():
         return {}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise VibeStackError(f"invalid UTF-8 in {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise VibeStackError(f"invalid JSON in {path}: {exc}") from exc
+    except OSError as exc:
+        raise VibeStackError(f"cannot read {path}: {exc}") from exc
     return data if isinstance(data, dict) else {}
 
 

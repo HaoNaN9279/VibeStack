@@ -83,6 +83,147 @@ class ToolMeta:
 
 
 @dataclass
+class ResolvedGroup:
+    """One capability group in a resolved injection plan."""
+
+    guid: str
+    name: str
+    version: str
+    description: str
+    root: str
+    permissions: list[str] = field(default_factory=list)
+    extends: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "guid": self.guid,
+            "name": self.name,
+            "version": self.version,
+            "description": self.description,
+            "root": self.root,
+            "permissions": list(self.permissions),
+            "extends": list(self.extends),
+            "tools": list(self.tools),
+        }
+
+
+@dataclass
+class ResolvedRule:
+    """One validated rule file."""
+
+    name: str
+    path: str
+    group: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"name": self.name, "path": self.path, "group": self.group}
+
+
+@dataclass
+class ResolvedSkill:
+    """One validated skill directory."""
+
+    name: str
+    path: str
+    group: str
+    description: str = ""
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "path": self.path,
+            "group": self.group,
+            "description": self.description,
+        }
+
+
+@dataclass
+class ResolvedAgent:
+    """One validated agent definition."""
+
+    name: str
+    description: str
+    mode: str
+    system: str
+    source: str
+    group: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "description": self.description,
+            "mode": self.mode,
+            "system": self.system,
+            "source": self.source,
+            "group": self.group,
+        }
+
+
+@dataclass
+class ResolvedCommand:
+    """One validated command definition."""
+
+    name: str
+    description: str
+    template: str
+    source: str
+    group: str
+    agent: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "description": self.description,
+            "template": self.template,
+            "source": self.source,
+            "group": self.group,
+        }
+        if self.agent:
+            data["agent"] = self.agent
+        return data
+
+
+@dataclass
+class ResolvedPlan:
+    """Resolved, agent-agnostic injection plan."""
+
+    schema_version: int
+    active: bool
+    repository: str
+    project: str
+    core: ResolvedGroup | None
+    groups: list[ResolvedGroup]
+    rules: list[ResolvedRule]
+    skills: list[ResolvedSkill]
+    agents: dict[str, ResolvedAgent]
+    commands: dict[str, ResolvedCommand]
+    mcp: dict[str, dict[str, object]]
+    warnings: list[str]
+    fingerprint: str
+    group_metas: list[GroupMeta] = field(default_factory=list, repr=False)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "active": self.active,
+            "repository": self.repository,
+            "project": self.project,
+            "core": self.core.to_dict() if self.core is not None else None,
+            "groups": [group.to_dict() for group in self.groups],
+            "rules": [rule.to_dict() for rule in self.rules],
+            "skills": [skill.to_dict() for skill in self.skills],
+            "agents": {
+                name: agent.to_dict() for name, agent in self.agents.items()
+            },
+            "commands": {
+                name: command.to_dict() for name, command in self.commands.items()
+            },
+            "mcp": dict(self.mcp),
+            "warnings": list(self.warnings),
+            "fingerprint": self.fingerprint,
+        }
+
+
+@dataclass
 class ProjectStack:
     """Contents of ``.vibestack/stack.json``."""
 
@@ -148,11 +289,15 @@ def _md_files(directory: Path) -> list[Path]:
 def read_json(path: Path) -> dict[str, object]:
     """Read a JSON object from *path*."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise VibeStackError(f"missing file: {path}") from exc
+    except UnicodeDecodeError as exc:
+        raise VibeStackError(f"invalid UTF-8 in {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise VibeStackError(f"invalid JSON in {path}: {exc}") from exc
+    except OSError as exc:
+        raise VibeStackError(f"cannot read {path}: {exc}") from exc
     if not isinstance(data, dict):
         raise VibeStackError(f"{path} must contain a JSON object")
     return data

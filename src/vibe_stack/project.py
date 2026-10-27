@@ -10,6 +10,7 @@ from vibe_stack.errors import (
     GroupAlreadyActiveError,
     GroupNotActiveError,
     ProjectConfigError,
+    VibeStackError,
 )
 from vibe_stack.loader import discover_tools, load_group
 from vibe_stack.model import GroupMeta, GroupRef, ProjectStack, ToolMeta
@@ -41,9 +42,13 @@ def read_stack(project_root: Path) -> ProjectStack | None:
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        raise ProjectConfigError(f"invalid UTF-8 in {path}: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise ProjectConfigError(f"invalid JSON in {path}: {exc}") from exc
+    except OSError as exc:
+        raise ProjectConfigError(f"cannot read {path}: {exc}") from exc
     return ProjectStack.from_dict(data)
 
 
@@ -101,28 +106,45 @@ def deactivate(project_root: Path, name: str) -> ProjectStack:
     return stack
 
 
-def resolve_order(repo: Path, stack: ProjectStack) -> list[GroupMeta]:
-    """Resolve core + project groups, dependencies first, deduplicated."""
+def resolve_order(
+    repo: Path,
+    stack: ProjectStack,
+    *,
+    strict: bool = True,
+    warnings: list[str] | None = None,
+) -> list[GroupMeta]:
+    """Resolve core + project groups, dependencies first, deduplicated.
+
+    ``strict`` controls missing groups. The CLI ``sync`` path stays strict;
+    the plugin-facing resolve API skips missing groups and records warnings.
+    """
     ordered: list[GroupMeta] = []
     seen: set[str] = set()
     refs = {ref.name: ref for ref in stack.groups}
 
-    def add(group: GroupMeta) -> None:
-        if group.name in seen:
+    def add(name: str, version: str | None) -> None:
+        if name in seen:
             return
-        seen.add(group.name)
+        seen.add(name)
+        try:
+            group = load_group(repo, name, version or None)
+        except VibeStackError as exc:
+            if strict:
+                raise
+            if warnings is not None:
+                warnings.append(str(exc))
+            return
         for dependency in group.extends:
             ref = refs.get(dependency)
-            dep = load_group(repo, dependency, ref.version if ref else None)
-            add(dep)
+            add(dependency, ref.version if ref else None)
         ordered.append(group)
 
     if stack.core is not None:
-        add(load_group(repo, stack.core.name, stack.core.version or None))
+        add(stack.core.name, stack.core.version)
     for ref in stack.groups:
         if ref.name == "core":
             continue
-        add(load_group(repo, ref.name, ref.version or None))
+        add(ref.name, ref.version)
     return ordered
 
 
@@ -137,9 +159,17 @@ def missing_tools(repo: Path, groups: list[GroupMeta]) -> list[str]:
     return missing
 
 
-def write_lock(repo: Path, project_root: Path, stack: ProjectStack) -> Path:
-    """Resolve the stack and write ``.vibestack/lock.json``."""
-    groups = resolve_order(repo, stack)
+def write_lock(
+    repo: Path,
+    project_root: Path,
+    stack: ProjectStack,
+    *,
+    groups: list[GroupMeta] | None = None,
+    fingerprint: str = "",
+    warnings: list[str] | None = None,
+) -> Path:
+    """Write ``.vibestack/lock.json`` from an existing resolution or resolve it."""
+    resolved_groups = list(groups) if groups is not None else resolve_order(repo, stack)
     data = {
         "schema_version": 1,
         "repository": str(repo.resolve()),
@@ -148,14 +178,18 @@ def write_lock(repo: Path, project_root: Path, stack: ProjectStack) -> Path:
         "groups": [],
     }
     if stack.core is not None:
-        core = next((g for g in groups if g.name == stack.core.name), None)
+        core = next((g for g in resolved_groups if g.name == stack.core.name), None)
         if core is not None:
             data["core"] = _group_lock(core)
     data["groups"] = [
         _group_lock(group)
-        for group in groups
+        for group in resolved_groups
         if stack.core is None or group.name != stack.core.name
     ]
+    if fingerprint:
+        data["fingerprint"] = fingerprint
+    if warnings:
+        data["warnings"] = list(warnings)
     path = lock_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
