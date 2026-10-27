@@ -28,12 +28,14 @@ const PLAN = {
 
 /**
  * Build a session whose surface records appended events.
+ * @param {string} [preset] - preset the session runs, as the `agentPreset` projection reports it.
  * @returns {Record<string, unknown>} session double.
  */
-function createSession() {
+function createSession(preset = 'vibestack') {
   const events = []
   const nodes = []
   return {
+    preset,
     events,
     surface: { nodes },
     append(type, data) {
@@ -66,11 +68,18 @@ function createHarness(options = {}) {
         return () => {}
       },
       stateOf(session, key) {
+        if (key === 'agentPreset') return session.preset ?? null
         if (key !== 'vibestack' || this.definition === null) return undefined
         return session.events.reduce(
           (state, event) => this.definition.apply(state, event),
           this.definition.init({}, 0),
         )
+      },
+    },
+    agents: {
+      store: new Map(),
+      get(id) {
+        return this.store.get(id)
       },
     },
     systemPrompt: {
@@ -290,4 +299,82 @@ test('a repeat step reuses the resolve result', async () => {
   await step(harness, harness.session)
   await step(harness, harness.session)
   assert.equal(calls, 1)
+})
+
+test('selecting the mode publishes the roster before the first turn', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const session = createSession()
+  const decision = await harness.handlers.get('session/event')(session, {
+    type: 'agent-preset/selected',
+    data: { agentPreset: 'vibestack' },
+  })
+  assert.equal(decision, undefined)
+  const event = session.events.find((item) => item.type === AGENTS_EVENT)
+  assert.ok(event)
+  assert.equal(event.data.selected, 'Athena')
+  assert.equal(event.data.project, PROJECT)
+  assert.ok(session.events.every((item) => item.type === AGENTS_EVENT))
+})
+
+test('selecting another mode publishes nothing', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const session = createSession('standard')
+  await harness.handlers.get('session/event')(session, {
+    type: 'agent-preset/selected',
+    data: { agentPreset: 'standard' },
+  })
+  assert.equal(session.events.length, 0)
+})
+
+test('a new agent of the mode publishes the roster', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const session = createSession('vibestack')
+  harness.handlers.get('agent/created')({ agent: { session }, source: 'startup' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const event = session.events.find((item) => item.type === AGENTS_EVENT)
+  assert.ok(event)
+  assert.equal(event.data.agents.length, 2)
+})
+
+test('a new agent of another preset is ignored', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const session = createSession('standard')
+  harness.handlers.get('agent/created')({ agent: { session }, source: 'startup' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(session.events.length, 0)
+})
+
+test('the mode switch reaches agents through the global preset event', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const session = createSession('vibestack')
+  harness.services.agents.store.set('session-1', { session })
+  await harness.handlers.get('agent-preset/selected')('session-1', 'vibestack')
+  assert.ok(session.events.some((item) => item.type === AGENTS_EVENT))
+})
+
+test('an inactive stack publishes no roster when the mode is selected', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: async () => ({ plan: { active: false }, warnings: [] }) })
+  const session = createSession()
+  await harness.handlers.get('session/event')(session, {
+    type: 'agent-preset/selected',
+    data: { agentPreset: 'vibestack' },
+  })
+  assert.equal(session.events.length, 0)
+})
+
+test('publishing early is skipped when agents are disabled', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, { agents: false }, { resolvePlan: resolveOk })
+  const session = createSession()
+  await harness.handlers.get('session/event')(session, {
+    type: 'agent-preset/selected',
+    data: { agentPreset: 'vibestack' },
+  })
+  assert.equal(session.events.length, 0)
 })

@@ -50,11 +50,12 @@ dsh plugin --profile desktop remove dsh-vibestack
 ## 使用
 
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
-2. 首次请求时插件解析当前会话目录的 `.vibestack/stack.json`，注入规则、技能、命令与
-   MCP，并把项目里的 Agent 列表写入会话。
+2. 选中模式的那一刻（还没发第一条消息），插件就解析当前会话目录的
+   `.vibestack/stack.json`，把项目里的 Agent 列表写入会话；首次请求时再注入规则、技能、
+   命令与 MCP。
 3. 输入框左下的 **Agent** 菜单（工具行左侧的 `◆` 按钮）切换本会话人设：点开后
    在上方展开独立菜单，列出项目里的 Agent 与说明。默认选择 Core 的 `Athena`；没有
-   可选 Agent 时菜单不出现。选择会持久化在会话里。
+   可选 Agent（项目未激活能力组）时菜单不出现。选择会持久化在会话里。
 4. 也可以直接运行命令：
 
 ```text
@@ -72,7 +73,7 @@ dsh plugin --profile desktop remove dsh-vibestack
 | `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能 | 该 agent |
 | `commands` | `ctx.commands.register()`，模板渲染后 `agent.steer()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
-| `agents` | 会话投影 + 输入框左下 Agent 菜单（独立浮层） + 系统提示词段落 | 该会话 |
+| `agents` | 会话投影（模式选中即发布，每次 `pre-step` 刷新） + 输入框左下 Agent 菜单（独立浮层） + 系统提示词段落 | 该会话 |
 
 命令模板支持 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
 
@@ -136,7 +137,9 @@ node test/agents.test.js && node test/config.test.js && node test/commands.test.
 ```
 
 `plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 → Agent 投影 →
-命令注册与执行 → 人设段落切换。
+命令注册与执行 → 人设段落切换。它也覆盖提前发布：空会话切到本模式
+（`agent-preset/selected`）、以本模式创建会话（`agent/created`）、其它模式的会话不发布，
+以及 `agents: false` 时不发布。
 
 安装后检查：
 

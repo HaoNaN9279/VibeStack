@@ -6,6 +6,10 @@
  * the persona section — lands in that agent's scope. No other working mode is
  * touched.
  *
+ * The agent roster is published as soon as the preset is bound (mode selected
+ * on a blank session, agent created, or session resumed), so the composer's
+ * Agent menu exists before the first turn; `agent/pre-step` keeps it fresh.
+ *
  * Everything here is failure-open: a missing CLI, a broken stack, an
  * unexpected payload, or an unavailable optional service degrades to a log line.
  */
@@ -41,6 +45,8 @@ export const name = 'vibestack'
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PERSONA_SECTION_ORDER = 10150
 const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
+/** Preset id this plugin is mounted under; the projection and the client read it. */
+const PRESET_ID = 'vibestack'
 
 /**
  * Register the VibeStack mode.
@@ -125,18 +131,49 @@ export function apply(ctx, rawConfig, deps = {}) {
   }
 
   /**
+   * Read the session's effective working directory.
+   * @param {object} session - session handle.
+   * @returns {string | null} absolute directory, or null when unknown.
+   */
+  const cwdOf = (session) => {
+    const workingDirectory = ctx.get('workingDirectory')
+    let cwd
+    try {
+      cwd = workingDirectory?.get?.(session)
+    } catch {
+      return null
+    }
+    return typeof cwd === 'string' && cwd.length > 0 ? cwd : null
+  }
+
+  /**
+   * Read the preset a session currently runs.
+   * @param {object} session - session handle.
+   * @returns {string | null} preset id, or null when the projection is absent.
+   */
+  const presetOf = (session) => {
+    const projections = ctx.get('sessionProjections')
+    try {
+      const value = projections?.stateOf?.(session, 'agentPreset')
+      return typeof value === 'string' ? value : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * Append the roster projection when the project's agents changed.
-   * @param {object} agent - agent handle.
+   * @param {object} session - session handle.
    * @param {Record<string, unknown>} plan - resolved plan.
    * @returns {void}
    */
-  const publishAgents = (agent, plan) => {
+  const publishAgents = (session, plan) => {
     const projections = ctx.get('sessionProjections')
     if (projections === undefined) return
     const list = personaAgents(agentList(plan))
     const agents = agentSummaries(list)
     const project = typeof plan.project === 'string' ? plan.project : ''
-    const current = projections.stateOf(agent.session, PROJECTION_KEY)
+    const current = projections.stateOf(session, PROJECTION_KEY)
     const selected = current?.selected ?? pickDefaultAgent(list, config.defaultAgent)
     if (
       current !== undefined &&
@@ -148,10 +185,43 @@ export function apply(ctx, rawConfig, deps = {}) {
       return
     }
     try {
-      agent.session.append(AGENTS_EVENT, { agents, selected, active: true, project })
+      session.append(AGENTS_EVENT, { agents, selected, active: true, project })
     } catch (error) {
       warn('vibestack: cannot publish agents: %o', error)
     }
+  }
+
+  /** Sessions with a roster publish already in flight. */
+  const hydrating = new WeakSet()
+
+  /**
+   * Publish the roster before the first turn.
+   *
+   * The mode is selectable while a session is still blank, and the composer's
+   * Agent menu is driven by the projection alone, so it must exist as soon as
+   * the preset is bound — not only once `agent/pre-step` runs.
+   * @param {object} session - session handle.
+   * @returns {Promise<void>} resolves after the projection was appended.
+   */
+  const hydrate = (session) => {
+    if (!config.agents || session === undefined || session === null) return Promise.resolve()
+    if (hydrating.has(session)) return Promise.resolve()
+    hydrating.add(session)
+    return (async () => {
+      try {
+        const cwd = cwdOf(session)
+        if (cwd === null) return
+        const result = await cache.get(cwd)
+        logWarnings(result.warnings)
+        const plan = result.plan
+        if (plan === null || plan.active !== true) return
+        publishAgents(session, plan)
+      } catch (error) {
+        warn('vibestack: cannot publish the agent roster: %o', error)
+      } finally {
+        hydrating.delete(session)
+      }
+    })()
   }
 
   /**
@@ -252,7 +322,7 @@ export function apply(ctx, rawConfig, deps = {}) {
     logWarnings(result.warnings)
     const plan = result.plan
     if (plan === null || plan.active !== true) return null
-    if (config.agents) publishAgents(agent, plan)
+    if (config.agents) publishAgents(agent.session, plan)
     syncCommands(plan)
     await syncMcp(plan, agent)
     return injectRules(agent, plan)
@@ -347,6 +417,36 @@ export function apply(ctx, rawConfig, deps = {}) {
     } catch (error) {
       warn('vibestack: cannot register /%s: %o', SELECT_COMMAND, error)
     }
+  })
+
+  ctx.on('session/event', (session, event) => {
+    if (!config.agents) return undefined
+    if (event?.type !== 'agent-preset/selected') return undefined
+    if (event.data?.agentPreset !== PRESET_ID) return undefined
+    return hydrate(session)
+  })
+
+  ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
+    if (!config.agents) return undefined
+    if (agentPreset !== PRESET_ID) return undefined
+    let session
+    try {
+      session = ctx.get('agents')?.get?.(sessionId)?.session ?? ctx.get('sessions')?.get?.(sessionId)
+    } catch {
+      return undefined
+    }
+    if (session === undefined || session === null) return undefined
+    return hydrate(session)
+  })
+
+  ctx.on('agent/created', (payload) => {
+    if (!config.agents) return undefined
+    const session = payload?.agent?.session
+    if (session === undefined || session === null) return undefined
+    if (presetOf(session) !== PRESET_ID) return undefined
+    // Creation is a serial dispatch; do not make it wait for a CLI round trip.
+    void hydrate(session)
+    return undefined
   })
 
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
