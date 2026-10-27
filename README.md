@@ -7,14 +7,23 @@
 ```text
 VibeStack/
 ├── capability-groups/
-│   └── <group-name>/
-│       └── <version>/
-│           ├── group.json
-│           ├── rules/
-│           ├── agents/
-│           ├── commands/
-│           ├── skills/
-│           └── references/
+│   ├── core/
+│   │   └── <version>/
+│   │       ├── group.json
+│   │       ├── rules/
+│   │       ├── agents/
+│   │       ├── commands/
+│   │       ├── skills/
+│   │       └── references/
+│   └── domain/
+│       └── <group-name>/
+│           └── <version>/
+│               ├── group.json
+│               ├── rules/
+│               ├── agents/
+│               ├── commands/
+│               ├── skills/
+│               └── references/
 ├── tools/
 │   └── <tool-name>/
 │       └── <version>/
@@ -30,7 +39,7 @@ VibeStack/
 
 ## 能力组
 
-每个能力组使用 `<group-name>/<version>/group.json` 定义：
+Core 使用 `core/<version>/group.json`，领域能力组使用 `domain/<group-name>/<version>/group.json` 定义：
 
 ```json
 {
@@ -50,6 +59,8 @@ VibeStack/
 - `guid` 在所有版本中保持不变。
 - `name`、`version` 必须与目录名一致。
 - `extends` 引用其他能力组名称，依赖先加载。
+- Core 位于 `capability-groups/core/`，随 `.vibestack/stack.json` 加载。
+- 领域能力组位于 `capability-groups/domain/`，只在 `groups` 中列出时加载。
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`。
 - 能力组内不放 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
 
@@ -146,7 +157,7 @@ vibe-stack activate data-forge blender
 3. `extends` 依赖先于依赖者
 4. 同名 Agent / 命令 / MCP 后加载者覆盖
 
-项目没有 `.vibestack/stack.json` 时，Core 不加载。
+项目没有 `.vibestack/stack.json` 时，Core 不加载。领域能力组不默认加载，必须加入 `groups`。
 
 ## Agent 插件
 

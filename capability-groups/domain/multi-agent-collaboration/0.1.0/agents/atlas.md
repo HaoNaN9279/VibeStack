@@ -27,7 +27,7 @@ mode: primary
 
 ### 阶段 1：读取并解析计划
 
-1. 读计划文件 `.opencode/jobs/<日期时间（精确到秒）>_<任务名称>/plan.md`
+1. 读计划文件 `.vibestack/jobs/<日期时间（精确到秒）>_<任务名称>/plan.md`
 2. 如有 boulder.json 直接读进度；没有则新建
 3a. 新建 boulder.json 时从 plan.md 提取：
    - 任务列表（T1, T2, T3...）
@@ -148,7 +148,7 @@ task(subagent_type="deep", ..., session_id="ses_abc123")
 
 ## 任务跟踪
 
-`.opencode/jobs/<日期时间（精确到秒）>_<任务名称>/boulder.json`：
+`.vibestack/jobs/<日期时间（精确到秒）>_<任务名称>/boulder.json`：
 
 ```jsonc
 {

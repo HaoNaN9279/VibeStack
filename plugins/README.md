@@ -109,9 +109,12 @@ rules / agents / commands / skills / mcp / tools
 
 ## 5. 能力规范
 
+下文 `<group-root>` 指 `capability-groups/core/<version>` 或
+`capability-groups/domain/<group>/<version>`。
+
 ### 5.1 Rules
 
-源位置：`capability-groups/<group>/<version>/rules/**/*.md`
+源位置：`<group-root>/rules/**/*.md`
 
 要求：
 
@@ -126,7 +129,7 @@ rules / agents / commands / skills / mcp / tools
 
 ### 5.2 Agents
 
-源位置：`capability-groups/<group>/<version>/agents/*.md`
+源位置：`<group-root>/agents/*.md`
 
 要求：
 
@@ -141,7 +144,7 @@ rules / agents / commands / skills / mcp / tools
 
 ### 5.3 Commands
 
-源位置：`capability-groups/<group>/<version>/commands/*.md`
+源位置：`<group-root>/commands/*.md`
 
 要求：
 
@@ -155,7 +158,7 @@ rules / agents / commands / skills / mcp / tools
 
 ### 5.4 Skills
 
-源位置：`capability-groups/<group>/<version>/skills/<skill-name>/SKILL.md`
+源位置：`<group-root>/skills/<skill-name>/SKILL.md`
 
 同时适用于插件自带的默认技能：`plugins/<agent>/skills/<skill-name>/SKILL.md`。
 

@@ -28,7 +28,7 @@ VibeStack 区分两种智能体角色：
 ### 确定添加内容的位置
 
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
-- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
+- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/domain/<group>/<version>/` 目录（领域专属配置）
 - **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
 
@@ -45,10 +45,10 @@ capability-groups/core/0.1.0/agents/
 
 ### 2.2 领域智能体（领域专属）
 
-放置在 `capability-groups/<group>/<version>/agents/` 目录下。
+放置在 `capability-groups/domain/<group>/<version>/agents/` 目录下。
 
 ```text
-capability-groups/<group>/<version>/
+capability-groups/domain/<group>/<version>/
 agents/
 ├── <domain>.md                  # 主领域智能体
 ├── <domain>-assistant.md        # 辅助子代理
@@ -57,7 +57,7 @@ agents/
 
 ### 2.3 项目智能体（项目专属）
 
-在 `capability-groups/<group>/<version>/agents/` 中定义，然后在项目根目录激活该能力组：
+在 `capability-groups/domain/<group>/<version>/agents/` 中定义，然后在项目根目录激活该能力组：
 
 ```bash
 vibe-stack activate <group>
@@ -138,7 +138,7 @@ mode: primary
 3. **一问一答** — 不超出所问范围
 ```
 
-### 5.2 领域子代理示例（`capability-groups/data-forge/1.0.0/agents/data-forge.md`）
+### 5.2 领域子代理示例（`capability-groups/domain/data-forge/1.0.0/agents/data-forge.md`）
 
 ```markdown
 ---

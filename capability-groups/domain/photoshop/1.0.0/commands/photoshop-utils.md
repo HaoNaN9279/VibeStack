@@ -128,7 +128,7 @@ doc.resizeImage(800, 600);                    await require('photoshop').core.ex
 
 ### 4. 代码片段索引
 
-规范模式请参考 `capability-groups/photoshop/1.0.0/rules/photoshop.md`。以下是按任务组织的常见操作代码模板索引。
+规范模式请参考 `capability-groups/domain/photoshop/1.0.0/rules/photoshop.md`。以下是按任务组织的常见操作代码模板索引。
 
 | 主题 | 层面 | 描述 |
 |-------|---------|-------------|

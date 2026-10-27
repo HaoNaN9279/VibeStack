@@ -7,6 +7,8 @@ export type JsonRecord = Record<string, any>
 
 const AGENT_MODES = new Set(["primary", "subagent", "all"])
 const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const CORE_GROUP = "core"
+const DOMAIN_DIR = "domain"
 
 export interface Injection {
   instructions: string[]
@@ -92,8 +94,15 @@ function versionKey(version: string): number[] {
   return [Number(match[1]), Number(match[2]), Number(match[3])]
 }
 
+function groupBase(repo: string, name: string): string {
+  if (name === CORE_GROUP) {
+    return path.join(repo, "capability-groups", CORE_GROUP)
+  }
+  return path.join(repo, "capability-groups", DOMAIN_DIR, name)
+}
+
 function latestVersion(repo: string, name: string): string | null {
-  const base = path.join(repo, "capability-groups", name)
+  const base = groupBase(repo, name)
   if (!existsSync(base)) return null
   const versions = readdirSync(base).filter((entry) =>
     existsSync(path.join(base, entry, "group.json")),
@@ -112,7 +121,7 @@ function latestVersion(repo: string, name: string): string | null {
 export function loadGroup(repo: string, name: string, version?: string): JsonRecord | null {
   const resolved = version || latestVersion(repo, name)
   if (!resolved) return null
-  const root = path.join(repo, "capability-groups", name, resolved)
+  const root = path.join(groupBase(repo, name), resolved)
   const meta = readJson(path.join(root, "group.json"))
   if (!meta) return null
   return { ...meta, root }
@@ -145,7 +154,7 @@ export function resolveGroups(repo: string, stack: JsonRecord): { groups: JsonRe
     add(String(stack.core.name), stack.core.version)
   }
   for (const ref of Array.isArray(stack.groups) ? stack.groups : []) {
-    if (ref && ref.name && ref.name !== "core") add(String(ref.name), ref.version)
+    if (ref && ref.name && ref.name !== CORE_GROUP) add(String(ref.name), ref.version)
   }
   return { groups: ordered, warnings }
 }

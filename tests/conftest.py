@@ -58,7 +58,7 @@ def repo(tmp_path: Path) -> Path:
     )
 
     _write_json(
-        root / "capability-groups/data/1.0.0/group.json",
+        root / "capability-groups/domain/data/1.0.0/group.json",
         {
             "guid": "c" * 32,
             "name": "data",
@@ -70,12 +70,12 @@ def repo(tmp_path: Path) -> Path:
         },
     )
     _write(
-        root / "capability-groups/data/1.0.0/rules/data.md",
+        root / "capability-groups/domain/data/1.0.0/rules/data.md",
         "---\nname: data\n---\n\n# data\n",
     )
 
     _write_json(
-        root / "capability-groups/base/1.0.0/group.json",
+        root / "capability-groups/domain/base/1.0.0/group.json",
         {
             "guid": "e" * 32,
             "name": "base",
@@ -87,7 +87,7 @@ def repo(tmp_path: Path) -> Path:
         },
     )
     _write(
-        root / "capability-groups/base/1.0.0/rules/base.md",
+        root / "capability-groups/domain/base/1.0.0/rules/base.md",
         "---\nname: base\n---\n\n# base\n",
     )
 

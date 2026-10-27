@@ -21,7 +21,7 @@ license: MIT
 ### 确定添加内容的位置
 
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
-- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
+- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/domain/<group>/<version>/` 目录（领域专属配置）
 - **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
 
@@ -38,10 +38,10 @@ capability-groups/core/0.1.0/commands/
 
 ### 2.2 领域命令（领域专属）
 
-放置在 `capability-groups/<group>/<version>/commands/` 目录下。
+放置在 `capability-groups/domain/<group>/<version>/commands/` 目录下。
 
 ```text
-capability-groups/<group>/<version>/
+capability-groups/domain/<group>/<version>/
 commands/
 ├── <domain>-process.md    # 领域处理命令
 ├── <domain>-export.md     # 导出命令
@@ -51,7 +51,7 @@ commands/
 
 ### 2.3 项目命令（项目专属）
 
-在 `capability-groups/<group>/<version>/commands/` 中定义，然后在项目根目录激活能力组：
+在 `capability-groups/domain/<group>/<version>/commands/` 中定义，然后在项目根目录激活能力组：
 
 ```bash
 vibe-stack activate <group>
@@ -204,7 +204,7 @@ description: commit 当前项目变更（含 submodules 支持）
 输出提交哈希与变更摘要。
 ```
 
-### 6.2 领域命令示例（`capability-groups/data-forge/1.0.0/commands/data-forge-process.md`）
+### 6.2 领域命令示例（`capability-groups/domain/data-forge/1.0.0/commands/data-forge-process.md`）
 
 ```markdown
 ---

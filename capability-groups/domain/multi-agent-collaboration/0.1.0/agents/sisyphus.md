@@ -52,8 +52,8 @@ mode: primary
 
 ### 计划与跟踪文件
 
-- 计划文件：`.opencode/jobs/<日期时间（精确到秒）>_<任务名称>/plan.md`——Atlas 执行的唯一依据，包含步骤定义、依赖关系和验收标准。
-- 跟踪文件：`.opencode/jobs/<日期时间（精确到秒）>_<任务名称>/boulder.json`——记录执行进度、各步骤状态和累积发现。
+- 计划文件：`.vibestack/jobs/<日期时间（精确到秒）>_<任务名称>/plan.md`——Atlas 执行的唯一依据，包含步骤定义、依赖关系和验收标准。
+- 跟踪文件：`.vibestack/jobs/<日期时间（精确到秒）>_<任务名称>/boulder.json`——记录执行进度、各步骤状态和累积发现。
 
 ### Atlas 执行路径
 
@@ -65,7 +65,7 @@ mode: primary
 
 ### 启动执行
 
-用户批准计划后，使用 `/start-work` 启动 Atlas。Atlas 自动定位 `plan.md` 和 `boulder.json`，按计划编排执行工作流。
+用户批准计划后，加载 `start-work` 技能启动 Atlas。Atlas 自动定位 `plan.md` 和 `boulder.json`，按计划编排执行工作流。
 
 ## Phase 1 — 代码库评估
 
@@ -130,7 +130,7 @@ mode: primary
 
 ### 计划文档
 
-计划与跟踪文件保存在 `.opencode/jobs/<日期时间（精确到秒）>_<任务名称>/`（`plan.md` + `boulder.json`）。
+计划与跟踪文件保存在 `.vibestack/jobs/<日期时间（精确到秒）>_<任务名称>/`（`plan.md` + `boulder.json`）。
 
 ## Phase 2C — 故障恢复
 

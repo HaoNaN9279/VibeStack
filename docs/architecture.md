@@ -29,14 +29,29 @@ vibe-stack CLI      ── 管理 + 工具入口
 ## 3. 能力组
 
 ```text
-capability-groups/<name>/<version>/
-├── group.json
-├── rules/
-├── agents/
-├── commands/
-├── skills/
-└── references/
+capability-groups/
+├── core/
+│   └── <version>/
+│       ├── group.json
+│       ├── rules/
+│       ├── agents/
+│       ├── commands/
+│       ├── skills/
+│       └── references/
+└── domain/
+    └── <name>/
+        └── <version>/
+            ├── group.json
+            ├── rules/
+            ├── agents/
+            ├── commands/
+            ├── skills/
+            └── references/
 ```
+
+Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列出时加载。
+`load_group` 对 `core` 使用 `capability-groups/core/<version>/`，其余组使用
+`capability-groups/domain/<name>/<version>/`。`discover_groups` 同时扫描两者。
 
 `group.json`：
 
@@ -77,7 +92,7 @@ capability-groups/<name>/<version>/
 1. 读全局配置 ~/.config/vibestack/config.json 定位仓库
 2. 读 .vibestack/stack.json
 3. 加载 Core
-4. 按 groups 顺序加载
+4. 按 groups 顺序加载领域能力组
 5. 每个组先递归加载 extends
 6. 按 guid 去重
 7. 注入 Agent 配置
@@ -232,7 +247,7 @@ Skill frontmatter 解析：
 | 内容 | 来源 | 处理 |
 |---|---|---|
 | core | 旧 `core/` | 迁移为 `core/0.1.0` |
-| domains | 旧 `domains/` | 每个 domain 一个能力组 |
+| domain | `capability-groups/domain/` | 领域能力组统一目录，不默认加载 |
 | data-forge | GitHub `HaoNaN9279/data_forge` | 重新部署，pin commit |
 | markitdown | GitHub `microsoft/markitdown` | 重新部署，pin tag |
 | video-transcribe | 本地 | 直接迁移 |

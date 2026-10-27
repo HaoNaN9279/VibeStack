@@ -21,7 +21,7 @@ license: MIT
 ### 确定添加内容的位置
 
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
-- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
+- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/domain/<group>/<version>/` 目录（领域专属配置）
 - **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
 
@@ -39,10 +39,10 @@ capability-groups/core/0.1.0/skills/
 
 ### 2.2 领域技能（领域专属）
 
-放置在 `capability-groups/<group>/<version>/skills/` 目录下。
+放置在 `capability-groups/domain/<group>/<version>/skills/` 目录下。
 
 ```text
-capability-groups/<group>/<version>/
+capability-groups/domain/<group>/<version>/
 skills/
 └── <skill-name>/
     └── SKILL.md
@@ -50,7 +50,7 @@ skills/
 
 ### 2.3 项目技能（项目专属）
 
-在 `capability-groups/<group>/<version>/skills/` 中定义，然后在项目根目录激活能力组：
+在 `capability-groups/domain/<group>/<version>/skills/` 中定义，然后在项目根目录激活能力组：
 
 ```bash
 vibe-stack activate <group>
@@ -167,7 +167,7 @@ A skill for releases
 
 ### 4.3 能力组技能引用工具
 
-> **适用于能力组技能（`capability-groups/<group>/<version>/skills/`）。**
+> **适用于能力组技能（`capability-groups/domain/<group>/<version>/skills/`）。**
 
 能力组内**禁止存放工具代码**：不得出现 `tools/` 目录、`pyproject.toml` 或工具源码。
 工具统一放在仓库根部 `tools/<name>/<version>/`。

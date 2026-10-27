@@ -196,7 +196,7 @@ AI 代理生成目录树、入口文件，以及（对于 UXP）与请求版本�
 
 ### 4.3 C++ SDK 项目 (`cpp` / `ps-cpp`)
 
-> **⚠ 仅文档性质的脚手架。** 不生成构建配置、平台工具链文件（`.vcxproj`、`.xcodeproj`）或 SDK 头文件。用户必须手动设置 C++ SDK 环境。项目结构指导请参考 `capability-groups/photoshop/1.0.0/rules/photoshop.md`。
+> **⚠ 仅文档性质的脚手架。** 不生成构建配置、平台工具链文件（`.vcxproj`、`.xcodeproj`）或 SDK 头文件。用户必须手动设置 C++ SDK 环境。项目结构指导请参考 `capability-groups/domain/photoshop/1.0.0/rules/photoshop.md`。
 
 1. **创建目录结构**
 

@@ -34,7 +34,7 @@ function fixtureRepo(): string {
     "---\nname: core-skill\ndescription: core skill\n---\n\n# core\n",
   )
   write(
-    path.join(repo, "capability-groups/data/1.0.0/group.json"),
+    path.join(repo, "capability-groups/domain/data/1.0.0/group.json"),
     JSON.stringify({
       guid: "b".repeat(32),
       name: "data",
@@ -45,15 +45,15 @@ function fixtureRepo(): string {
     }),
   )
   write(
-    path.join(repo, "capability-groups/data/1.0.0/rules/data.md"),
+    path.join(repo, "capability-groups/domain/data/1.0.0/rules/data.md"),
     "---\nname: data\n---\n\n# data\n",
   )
   write(
-    path.join(repo, "capability-groups/base/1.0.0/group.json"),
+    path.join(repo, "capability-groups/domain/base/1.0.0/group.json"),
     JSON.stringify({ guid: "d".repeat(32), name: "base", version: "1.0.0", description: "base", tools: [] }),
   )
   write(
-    path.join(repo, "capability-groups/base/1.0.0/commands/run.md"),
+    path.join(repo, "capability-groups/domain/base/1.0.0/commands/run.md"),
     "---\nname: run\ndescription: run\n---\n\nrun it\n",
   )
   write(
@@ -150,15 +150,15 @@ describe("buildInjection", () => {
   test("requires command name and description and keeps optional agent", () => {
     const repo = fixtureRepo()
     write(
-      path.join(repo, "capability-groups/base/1.0.0/commands/no-name.md"),
+      path.join(repo, "capability-groups/domain/base/1.0.0/commands/no-name.md"),
       "---\ndescription: no name\n---\n\nbody\n",
     )
     write(
-      path.join(repo, "capability-groups/base/1.0.0/commands/no-description.md"),
+      path.join(repo, "capability-groups/domain/base/1.0.0/commands/no-description.md"),
       "---\nname: no-description\n---\n\nbody\n",
     )
     write(
-      path.join(repo, "capability-groups/base/1.0.0/commands/deploy.md"),
+      path.join(repo, "capability-groups/domain/base/1.0.0/commands/deploy.md"),
       "---\nname: deploy\ndescription: deploy\nagent: Helper\n---\n\ndeploy it\n",
     )
     const injection = buildInjection(

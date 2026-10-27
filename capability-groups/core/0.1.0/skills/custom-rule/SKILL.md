@@ -15,7 +15,7 @@ license: MIT
 ### 确定添加内容的位置
 
 - **"添加常驻内容"** 或类似描述 → `capability-groups/core/0.1.0/` 目录（全局常驻配置）
-- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/<group>/<version>/` 目录（领域专属配置）
+- **"为 xxx domain" / "xxx 领域" / "为 xxx 添加内容"** 或类似描述 → `capability-groups/domain/<group>/<version>/` 目录（领域专属配置）
 - **"为当前项目添加内容"** 或类似描述 → 在仓库新建或复用项目能力组，并在项目 `.vibestack/stack.json` 的 `groups` 中激活
 - **未明确指明位置** → **必须询问用户**具体的添加位置，绝对不允许擅自做决策
 
@@ -33,17 +33,17 @@ capability-groups/core/0.1.0/rules/
 
 ### 1.2 领域规则（领域专属）
 
-放置在 `capability-groups/<group>/<version>/rules/` 目录下。
+放置在 `capability-groups/domain/<group>/<version>/rules/` 目录下。
 
 ```text
-capability-groups/<group>/<version>/
+capability-groups/domain/<group>/<version>/
 rules/
 └── <domain>.md
 ```
 
 ### 1.3 项目规则（项目专属）
 
-在 `capability-groups/<group>/<version>/rules/` 中定义，然后在项目根目录激活能力组：
+在 `capability-groups/domain/<group>/<version>/rules/` 中定义，然后在项目根目录激活能力组：
 
 ```bash
 vibe-stack activate <group>
@@ -130,7 +130,7 @@ name: rule-category
 |----------|----------|------|
 | 全局行为规范 | `capability-groups/core/0.1.0/rules/00-global.md` | 沟通风格、安全策略 |
 | 编码规范 | `capability-groups/core/0.1.0/rules/01-coding.md` | TypeScript 规范、命名约定 |
-| 领域特定规则 | `capability-groups/<group>/<version>/rules/<name>.md` | Unity API 使用规范 |
+| 领域特定规则 | `capability-groups/domain/<group>/<version>/rules/<name>.md` | Unity API 使用规范 |
 | 工作流规则 | `capability-groups/core/0.1.0/rules/02-workflow.md` | Git 流程、PR 规范 |
 
 ---

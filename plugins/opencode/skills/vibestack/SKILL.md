@@ -61,7 +61,8 @@ tool:<guid>@v0.2.1
 
 ## 扩展能力组
 
-- 新能力组：`capability-groups/<name>/<version>/group.json`
+- Core 组：`capability-groups/core/<version>/group.json`
+- 领域能力组：`capability-groups/domain/<name>/<version>/group.json`
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`
 - 工具包：`tools/<name>/<version>/tool.json`
 - Agent 适配器：`plugins/<agent>/`

@@ -9,6 +9,8 @@ from vibe_stack.errors import GroupNotFoundError, ToolNotFoundError, VibeStackEr
 from vibe_stack.model import GroupMeta, ToolMeta, read_json
 
 _SEMVER = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
+_CORE_GROUP = "core"
+_DOMAIN_DIR = "domain"
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -18,12 +20,21 @@ def _version_key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in match.groups())
 
 
+def _group_base(repo: Path, name: str) -> Path:
+    base = repo / "capability-groups"
+    if name == _CORE_GROUP:
+        return base / _CORE_GROUP
+    return base / _DOMAIN_DIR / name
+
+
 def load_group(repo: Path, name: str, version: str | None = None) -> GroupMeta:
     """Load one capability group.
 
-    When *version* is omitted, choose the highest semver available.
+    Core lives in ``capability-groups/core``; every other group lives in
+    ``capability-groups/domain``. When *version* is omitted, choose the
+    highest semver available.
     """
-    base = repo / "capability-groups" / name
+    base = _group_base(repo, name)
     if not base.is_dir():
         raise GroupNotFoundError(f"capability group '{name}' not found")
     if version:
@@ -66,14 +77,27 @@ def load_group(repo: Path, name: str, version: str | None = None) -> GroupMeta:
 
 
 def discover_groups(repo: Path) -> list[GroupMeta]:
-    """Discover every ``capability-groups/<name>/<version>/group.json``."""
+    """Discover core and domain capability groups."""
     base = repo / "capability-groups"
     if not base.is_dir():
         return []
+    entries: list[tuple[str, str]] = []
+    core_base = base / _CORE_GROUP
+    if core_base.is_dir():
+        entries.extend(
+            (_CORE_GROUP, config.parent.name)
+            for config in sorted(core_base.glob("*/group.json"))
+        )
+    domain_base = base / _DOMAIN_DIR
+    if domain_base.is_dir():
+        entries.extend(
+            (config.parent.parent.name, config.parent.name)
+            for config in sorted(domain_base.glob("*/*/group.json"))
+        )
     groups: list[GroupMeta] = []
-    for config in sorted(base.glob("*/*/group.json")):
+    for name, version in entries:
         try:
-            groups.append(load_group(repo, config.parent.parent.name, config.parent.name))
+            groups.append(load_group(repo, name, version))
         except VibeStackError:
             continue
     return groups
