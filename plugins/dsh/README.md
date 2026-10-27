@@ -52,8 +52,9 @@ dsh plugin --profile desktop remove dsh-vibestack
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
 2. 首次请求时插件解析当前会话目录的 `.vibestack/stack.json`，注入规则、技能、命令与
    MCP，并把项目里的 Agent 列表写入会话。
-3. 输入区左下的 **Agent** 菜单切换本会话人设：默认选择 Core 的 `Athena`；没有可选
-   Agent 时保持未选择。选择会持久化在会话里。
+3. 输入框左下的 **Agent** 菜单（工具行左侧的 `◆` 按钮）切换本会话人设：点开后
+   在上方展开独立菜单，列出项目里的 Agent 与说明。默认选择 Core 的 `Athena`；没有
+   可选 Agent 时菜单不出现。选择会持久化在会话里。
 4. 也可以直接运行命令：
 
 ```text
@@ -71,7 +72,7 @@ dsh plugin --profile desktop remove dsh-vibestack
 | `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能 | 该 agent |
 | `commands` | `ctx.commands.register()`，模板渲染后 `agent.steer()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
-| `agents` | 会话投影 + 输入区 Agent 菜单 + 系统提示词段落 | 该会话 |
+| `agents` | 会话投影 + 输入框左下 Agent 菜单（独立浮层） + 系统提示词段落 | 该会话 |
 
 命令模板支持 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
 
@@ -115,7 +116,7 @@ plugins/dsh/
 ├── package.json         # DSH 组合包：dsh.bundle.patch + dsh.client
 ├── cordis.patch.yml     # 只 insert：根级 UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（preset 作用域）
-├── client.js            # 浏览器半（手写 bundle，仅 require react）
+├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
 ├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
