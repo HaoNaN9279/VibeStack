@@ -1,13 +1,20 @@
 {
   "name": "dsh-vibestack",
   "version": "0.1.0",
-  "private": true,
   "description": "VibeStack capability groups as a DeepSeek Harness mode",
   "type": "module",
   "main": "index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HaoNaN9279/VibeStack.git",
+    "directory": "plugins/dsh"
+  },
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
+    "./client.js": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
@@ -15,18 +22,12 @@
     "client.js",
     "lib/",
     "cordis.patch.yml",
-    "skills/"
+    "skills/",
+    "plugin.json",
+    "README.md"
   ],
   "engines": {
     "dsh": ">=0.2.1-0 <0.3.0"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/dsh-mcp-client": ">=0.2.1-0 <0.3.0"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-mcp-client": {
-      "optional": true
-    }
   },
   "dsh": {
     "manifestVersion": 1,

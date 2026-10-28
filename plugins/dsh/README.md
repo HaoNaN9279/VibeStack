@@ -15,17 +15,29 @@ Agent 人设只在进入该模式的会话里生效。
 需要：`vibe-stack` 已安装并在 `PATH`（`uv tool install --from <repo> vibe-stack`），
 DSH 桌面版 0.2.x。
 
-装进桌面版正在使用的 profile（先完全退出桌面版，再执行）：
+本插件是一个标准的 DSH 组合包（`package.json` 里的 `dsh.bundle.patch` +
+`dsh.client`），没有构建步骤，入口就是仓库里的这几个文件。用 DSH 自带的插件安装功能
+从本目录安装即可：
 
-```bash
-dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
-```
+1. 打开桌面端左侧边栏的 **插件** 页。
+2. 点 **添加插件**，在「包名或地址」里填本目录的**绝对路径**，例如
+   `D:\workspace\work\VibeStack\plugins\dsh`。
+3. 安装成功后按提示**重启 DSH**：桌面 profile 没有开启 HMR，组合在下一次启动时生效。
+
+DSH 用本地 `link:` 依赖把本目录装进当前 profile，并把 `dsh-vibestack` 追加到
+`dsh.profile.bundles`。因此仓库里的改动对已安装的插件立即生效，改完重启桌面端即可，
+不需要重新打包。
+
+> `dsh plugin --profile desktop add ...` 在 DSH 0.2.1 起不可用：desktop profile 由
+> Electron 应用独占，命令行会直接报
+> `profile "desktop" is managed exclusively by the Electron application`。
+> `dsh plugin` 只用于自建 profile。
 
 只想先试一下，可以基于官方 web 模板建一个独立 profile：
 
 ```bash
 dsh --profile vstest --from-default-profile web --dump-config > /dev/null
-dsh plugin --profile vstest add "D:/workspace/VibeStack/plugins/dsh"
+dsh plugin --profile vstest add "D:/workspace/work/VibeStack/plugins/dsh"
 dsh --profile vstest --port 8799 --no-open
 ```
 
@@ -34,17 +46,17 @@ dsh --profile vstest --port 8799 --no-open
 > `pending (waiting for service: agentPresets)`。请先按上面的方式建好 web/desktop
 > profile 再安装。
 
-安装时 pnpm 会提示 `linked in dependency will not resolve the peer dependencies`：
-本插件只把 `@deepseek-ai/dsh-mcp-client` 声明为可选 peer，解析不到时 MCP 能力降级为
-一条告警，其余能力不受影响。
+MCP 能力使用 DSH 安装自带的 `@deepseek-ai/dsh-mcp-client`，由 Loader 从运行时解析，
+不随插件安装，所以插件不声明 peer 依赖、安装时也不会有 peer 告警；解析不到时 MCP
+只降级为一条告警，其余能力不受影响。
 
-`vibe-stack plugin install dsh` 不适用：本适配器没有声明 `install` 字段，安装动作由
-`dsh plugin add` 完成（`vibe-stack plugin list` 仍能发现它）。
+`vibe-stack plugin install dsh` 不适用：本适配器没有声明 `install` 字段，安装由 DSH
+的插件页完成（`vibe-stack plugin list` 仍能发现它）。
 
-卸载：
+卸载：在插件页移除 `dsh-vibestack`（同时取消组合包选择与依赖），或对自建 profile 执行：
 
 ```bash
-dsh plugin --profile desktop remove dsh-vibestack
+dsh plugin --profile vstest remove dsh-vibestack
 ```
 
 ## 使用
@@ -141,7 +153,8 @@ node test/agents.test.js && node test/config.test.js && node test/commands.test.
 （`agent-preset/selected`）、以本模式创建会话（`agent/created`）、其它模式的会话不发布，
 以及 `agents: false` 时不发布。
 
-安装后检查：
+安装后检查（桌面版在插件页看到 `dsh-vibestack` 处于启用状态即可；自建 profile 可以用
+命令行看组合结果）：
 
 ```bash
 dsh --profile <profile> --dump-config | grep -i -A2 vibestack
@@ -149,10 +162,12 @@ dsh --profile <profile> --dump-config | grep -i -A2 vibestack
 
 已在 DSH 0.2.1-rc.3 / Windows 上验证：
 
-- `dsh plugin --profile <p> add <本地目录>` 建立 `link:` 依赖成功，`--dump-config`
-  出现 `# == dsh-vibestack` 层与 `preset-vibestack` 行。
-- 用官方 web 模板启动时，启动图包含 `{"id":"dsh-vibestack"}`，
-  `/plugins/??dsh-vibestack/client.js` 返回 200，且没有未激活告警。
+- 插件页「添加插件」填本目录绝对路径 → pnpm 建立 `link:` 依赖、`dsh.profile.bundles`
+  追加 `dsh-vibestack`，安装日志只有 `Done`，没有 peer 告警。
+- 与桌面版同构的 profile（`nodeLinker: hoisted`、`autoInstallPeers: false`）用同样的
+  流程安装后，`--dump-config` 出现 `# == dsh-vibestack` 层与 `preset-vibestack` 行。
+- 用官方 web 模板启动时，启动图包含 `{"id":"dsh-vibestack","url":"plugins/??dsh-vibestack/client.js…"}`，
+  该 URL 返回 200（`text/javascript`），且没有未激活告警。
 - `node test/*.test.js` 全绿。
 
 ## 排查
@@ -163,7 +178,7 @@ dsh --profile <profile> --dump-config | grep -i -A2 vibestack
   用 `command` 配置绝对路径。
 - 会话目录不是项目根（必须含 `.vibestack/stack.json`）；子目录会话视为未激活。
 - 解析超时：调大 `timeoutMs` 或 `VIBESTACK_RESOLVE_TIMEOUT_MS`。
-- MCP 未出现：macOS/Windows 桌面版需要 `@deepseek-ai/dsh-mcp-client` 可被运行时解析；
-  解析不到时插件只记一条告警并跳过，其它能力不受影响。
+- MCP 未出现：插件通过 Loader 解析 DSH 安装自带的 `@deepseek-ai/dsh-mcp-client`；旧版
+  或裁剪过的安装可能没有它，此时插件只记一条告警并跳过，其它能力不受影响。
 - Agent 菜单不出现：确认会话模式是 VibeStack，且项目至少激活了一个含 `agents/` 的
   能力组（Core 自带 `Athena`、`Hermes`）。
