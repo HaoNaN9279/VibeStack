@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 
 import { apply } from '../index.js'
-import { AGENTS_EVENT, SELECT_EVENT } from '../lib/agents.js'
+import { SELECT_COMMAND, SOURCE_KIND } from '../lib/agents.js'
 
 const PROJECT = '/proj'
 /** A real rule file from this repository, so rendering exercises the fs path. */
@@ -27,20 +27,19 @@ const PLAN = {
 }
 
 /**
- * Build a session whose surface records appended events.
+ * Build a session double that records whether the plugin appended anything.
  * @param {string} [preset] - preset the session runs, as the `agentPreset` projection reports it.
- * @returns {Record<string, unknown>} session double.
+ * @returns {Record<string, any>} session double.
  */
 function createSession(preset = 'vibestack') {
+  /** @type {{type: string, data: Record<string, unknown>}[]} */
   const events = []
-  const nodes = []
   return {
     preset,
     events,
-    surface: { nodes },
+    surface: { nodes: [] },
     append(type, data) {
       events.push({ type, data })
-      nodes.push(events.length)
       return events.length
     },
     eventAt(seq) {
@@ -50,11 +49,32 @@ function createSession(preset = 'vibestack') {
 }
 
 /**
+ * Simulate the harness logging the step's injected messages into the session.
+ * @param {Record<string, any>} session - session double.
+ * @param {Record<string, any>} decision - step decision.
+ * @returns {void}
+ */
+function recordMessages(session, decision) {
+  for (const message of decision.messages ?? []) {
+    session.events.push({ type: 'user/message', data: message })
+  }
+}
+
+/**
+ * Simulate the command executor logging a selection.
+ * @param {Record<string, any>} session - session double.
+ * @param {string} args - raw command input.
+ * @returns {void}
+ */
+function logSelection(session, args) {
+  session.events.push({ type: 'command/run', data: { commandId: 'c1', name: SELECT_COMMAND, args, source: { kind: 'user' } } })
+}
+
+/**
  * Build a Cordis-like context exposing the services the plugin uses.
- * @param {{readRule?: (file: string) => Promise<string>}} [options] - seams.
  * @returns {Record<string, any>} harness.
  */
-function createHarness(options = {}) {
+function createHarness() {
   const handlers = new Map()
   const services = {
     workingDirectory: {
@@ -130,13 +150,13 @@ function createHarness(options = {}) {
     },
     ...services,
   }
-  return { ctx, services, handlers, session: createSession(), options }
+  return { ctx, services, handlers, session: createSession() }
 }
 
 /**
  * Run one agent step through the plugin.
  * @param {Record<string, any>} harness - harness.
- * @param {object} session - session double.
+ * @param {Record<string, any>} session - session double.
  * @returns {Promise<Record<string, any>>} step decision.
  */
 async function step(harness, session) {
@@ -161,29 +181,42 @@ test('the root UI row registers nothing on the host', () => {
   assert.equal(harness.services.skills.provider, null)
 })
 
-test('a step injects the rules message once per digest', async () => {
+test('a step injects the instructions message once', async () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
   const first = await step(harness, harness.session)
   assert.equal(first.messages.length, 1)
   const message = first.messages[0]
   assert.equal(message.role, 'user')
-  assert.equal(message.source.kind, 'vibestack')
+  assert.equal(message.source.kind, SOURCE_KIND)
   assert.match(message.content[0].text, /^<system-reminder>/)
 
   const second = await step(harness, harness.session)
   assert.deepEqual(second.messages, [])
 })
 
-test('the roster projection defaults to Athena', async () => {
+test('the roster rides in the message source, never in model text', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const decision = await step(harness, harness.session)
+  const message = decision.messages[0]
+  assert.deepEqual(message.source.roster.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
+  assert.equal(message.source.roster.defaultSelected, 'Athena')
+  assert.equal(message.source.roster.project, PROJECT)
+  assert.equal(message.content[0].text.includes('"Athena"'), false)
+
+  recordMessages(harness.session, decision)
+  const state = harness.services.sessionProjections.stateOf(harness.session, 'vibestack')
+  assert.deepEqual(state.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
+  assert.equal(state.selected, 'Athena')
+})
+
+test('the plugin never appends a session event of its own', async () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
   await step(harness, harness.session)
-  const event = harness.session.events.find((item) => item.type === AGENTS_EVENT)
-  assert.ok(event)
-  assert.equal(event.data.selected, 'Athena')
-  assert.deepEqual(event.data.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
-  assert.equal(event.data.active, true)
+  await step(harness, harness.session)
+  assert.deepEqual(harness.session.events, [])
 })
 
 test('plan commands and the agent selector are registered', async () => {
@@ -211,38 +244,60 @@ test('running a plan command steers the rendered template', async () => {
   assert.equal(steered[0].content.at(-1).text, 'commit fix tests')
 })
 
-test('the agent selector writes the session projection', async () => {
+test('the agent selector reports the roster without writing events', async () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  await step(harness, harness.session)
-  const command = harness.services.commands.definitions.find((definition) => definition.name === 'vibestack-agent')
-  const agent = { session: harness.session, steer() {} }
+  const command = harness.services.commands.definitions.find((definition) => definition.name === SELECT_COMMAND)
+  const agent = { session: harness.session }
 
-  const listed = command.handler({ agent, rawInput: '' })
+  const listed = await command.handler({ agent, rawInput: '' })
   assert.equal(listed.kind, 'success')
   assert.match(listed.text, /Athena/)
+  assert.match(listed.text, /当前：Athena/)
 
-  const switched = command.handler({ agent, rawInput: 'hermes' })
+  const switched = await command.handler({ agent, rawInput: 'hermes' })
   assert.equal(switched.kind, 'success')
-  assert.ok(harness.session.events.some((event) => event.type === SELECT_EVENT && event.data.id === 'Hermes'))
+  assert.match(switched.text, /Hermes/)
 
-  const missing = command.handler({ agent, rawInput: 'nobody' })
+  const missing = await command.handler({ agent, rawInput: 'nobody' })
   assert.equal(missing.kind, 'error')
+
+  assert.deepEqual(harness.session.events, [])
 })
 
-test('the persona section follows the selection', async () => {
+test('the persona section follows the logged selection', async () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  await step(harness, harness.session)
+  const decision = await step(harness, harness.session)
+  recordMessages(harness.session, decision)
   const section = harness.services.systemPrompt.sections[0]
   assert.equal(section.name, 'vibestack:agent')
 
   const agent = { session: harness.session }
   assert.match(section.text({ agent }), /# Athena system/)
 
-  const command = harness.services.commands.definitions.find((definition) => definition.name === 'vibestack-agent')
-  command.handler({ agent, rawInput: 'Hermes' })
+  logSelection(harness.session, 'Hermes')
   assert.match(section.text({ agent }), /# Hermes system/)
+
+  const command = harness.services.commands.definitions.find((definition) => definition.name === SELECT_COMMAND)
+  const result = await command.handler({ agent, rawInput: 'Athena' })
+  assert.equal(result.kind, 'success')
+  logSelection(harness.session, 'Athena')
+  assert.match(section.text({ agent }), /# Athena system/)
+})
+
+test('switching personas does not re-inject the instructions message', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const decision = await step(harness, harness.session)
+  recordMessages(harness.session, decision)
+
+  logSelection(harness.session, 'Hermes')
+  const next = await step(harness, harness.session)
+  assert.deepEqual(next.messages, [])
+
+  const state = harness.services.sessionProjections.stateOf(harness.session, 'vibestack')
+  assert.equal(state.selected, 'Hermes')
 })
 
 test('the skill provider exposes plan skills', async () => {
@@ -267,7 +322,7 @@ test('a failed resolve leaves the step untouched', async () => {
   apply(harness.ctx, {}, { resolvePlan: async () => ({ plan: null, warnings: ['vibe-stack resolve failed'] }) })
   const decision = await step(harness, harness.session)
   assert.deepEqual(decision.messages, [])
-  assert.equal(harness.session.events.length, 0)
+  assert.deepEqual(harness.session.events, [])
 })
 
 test('an inactive plan leaves the step untouched', async () => {
@@ -275,7 +330,7 @@ test('an inactive plan leaves the step untouched', async () => {
   apply(harness.ctx, {}, { resolvePlan: async () => ({ plan: { active: false }, warnings: [] }) })
   const decision = await step(harness, harness.session)
   assert.deepEqual(decision.messages, [])
-  assert.equal(harness.session.events.length, 0)
+  assert.deepEqual(harness.session.events, [])
 })
 
 test('agents can be disabled by config', async () => {
@@ -283,7 +338,7 @@ test('agents can be disabled by config', async () => {
   apply(harness.ctx, { agents: false }, { resolvePlan: resolveOk })
   const decision = await step(harness, harness.session)
   assert.equal(decision.messages.length, 1)
-  assert.equal(harness.session.events.length, 0)
+  assert.equal(decision.messages[0].source.roster, undefined)
   assert.equal(harness.services.systemPrompt.sections.length, 0)
 })
 
@@ -301,80 +356,8 @@ test('a repeat step reuses the resolve result', async () => {
   assert.equal(calls, 1)
 })
 
-test('selecting the mode publishes the roster before the first turn', async () => {
+test('the plugin registers no session or preset listeners', () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  const session = createSession()
-  const decision = await harness.handlers.get('session/event')(session, {
-    type: 'agent-preset/selected',
-    data: { agentPreset: 'vibestack' },
-  })
-  assert.equal(decision, undefined)
-  const event = session.events.find((item) => item.type === AGENTS_EVENT)
-  assert.ok(event)
-  assert.equal(event.data.selected, 'Athena')
-  assert.equal(event.data.project, PROJECT)
-  assert.ok(session.events.every((item) => item.type === AGENTS_EVENT))
-})
-
-test('selecting another mode publishes nothing', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  const session = createSession('standard')
-  await harness.handlers.get('session/event')(session, {
-    type: 'agent-preset/selected',
-    data: { agentPreset: 'standard' },
-  })
-  assert.equal(session.events.length, 0)
-})
-
-test('a new agent of the mode publishes the roster', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  const session = createSession('vibestack')
-  harness.handlers.get('agent/created')({ agent: { session }, source: 'startup' })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  const event = session.events.find((item) => item.type === AGENTS_EVENT)
-  assert.ok(event)
-  assert.equal(event.data.agents.length, 2)
-})
-
-test('a new agent of another preset is ignored', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  const session = createSession('standard')
-  harness.handlers.get('agent/created')({ agent: { session }, source: 'startup' })
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  assert.equal(session.events.length, 0)
-})
-
-test('the mode switch reaches agents through the global preset event', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  const session = createSession('vibestack')
-  harness.services.agents.store.set('session-1', { session })
-  await harness.handlers.get('agent-preset/selected')('session-1', 'vibestack')
-  assert.ok(session.events.some((item) => item.type === AGENTS_EVENT))
-})
-
-test('an inactive stack publishes no roster when the mode is selected', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, {}, { resolvePlan: async () => ({ plan: { active: false }, warnings: [] }) })
-  const session = createSession()
-  await harness.handlers.get('session/event')(session, {
-    type: 'agent-preset/selected',
-    data: { agentPreset: 'vibestack' },
-  })
-  assert.equal(session.events.length, 0)
-})
-
-test('publishing early is skipped when agents are disabled', async () => {
-  const harness = createHarness()
-  apply(harness.ctx, { agents: false }, { resolvePlan: resolveOk })
-  const session = createSession()
-  await harness.handlers.get('session/event')(session, {
-    type: 'agent-preset/selected',
-    data: { agentPreset: 'vibestack' },
-  })
-  assert.equal(session.events.length, 0)
+  assert.deepEqual([...harness.handlers.keys()], ['agent/pre-step'])
 })

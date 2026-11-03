@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "dsh",
   "agent": "dsh",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "entrypoint": "index.js",
   "capabilities": ["rules", "skills", "commands", "mcp", "agents"]
 }

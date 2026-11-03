@@ -19,16 +19,13 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
-  AGENTS_EVENT,
   PROJECTION_KEY,
   SELECT_COMMAND,
-  SELECT_EVENT,
   agentList,
-  agentSummaries,
   createProjectionDefinition,
+  createRoster,
   personaAgents,
   pickDefaultAgent,
-  sameRoster,
 } from './lib/agents.js'
 import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
@@ -45,8 +42,6 @@ export const name = 'vibestack'
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PERSONA_SECTION_ORDER = 10150
 const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
-/** Preset id this plugin is mounted under; the projection and the client read it. */
-const PRESET_ID = 'vibestack'
 
 /**
  * Register the VibeStack mode.
@@ -113,19 +108,23 @@ export function apply(ctx, rawConfig, deps = {}) {
   }
 
   /**
-   * Whether the session already carries the same rendered instructions.
+   * Whether the session already carries this exact instructions publication.
    * @param {object} session - agent session.
-   * @param {string} digest - rendered digest.
+   * @param {string} digest - rendered rules digest.
+   * @param {string} rosterKey - roster identity (empty when agents are off).
    * @returns {boolean} true when a matching message is already in history.
    */
-  const surfaceHasDigest = (session, digest) => {
+  const surfaceHasPublication = (session, digest, rosterKey) => {
     const nodes = session?.surface?.nodes
     if (!Array.isArray(nodes) || typeof session?.eventAt !== 'function') return false
     for (const seq of [...nodes].reverse()) {
       const event = session.eventAt(seq)
       if (!event || event.type !== 'user/message') continue
       const source = event.data?.source
-      if (source && source.kind === 'vibestack' && source.digest === digest) return true
+      if (!source || source.kind !== 'vibestack') continue
+      if (source.digest !== digest) continue
+      const published = typeof source.roster?.key === 'string' ? source.roster.key : ''
+      if (published === rosterKey) return true
     }
     return false
   }
@@ -147,81 +146,25 @@ export function apply(ctx, rawConfig, deps = {}) {
   }
 
   /**
-   * Read the preset a session currently runs.
-   * @param {object} session - session handle.
-   * @returns {string | null} preset id, or null when the projection is absent.
-   */
-  const presetOf = (session) => {
-    const projections = ctx.get('sessionProjections')
-    try {
-      const value = projections?.stateOf?.(session, 'agentPreset')
-      return typeof value === 'string' ? value : null
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Append the roster projection when the project's agents changed.
-   * @param {object} session - session handle.
-   * @param {Record<string, unknown>} plan - resolved plan.
-   * @returns {void}
-   */
-  const publishAgents = (session, plan) => {
-    const projections = ctx.get('sessionProjections')
-    if (projections === undefined) return
-    const list = personaAgents(agentList(plan))
-    const agents = agentSummaries(list)
-    const project = typeof plan.project === 'string' ? plan.project : ''
-    const current = projections.stateOf(session, PROJECTION_KEY)
-    const selected = current?.selected ?? pickDefaultAgent(list, config.defaultAgent)
-    if (
-      current !== undefined &&
-      sameRoster(current.agents, agents) &&
-      current.selected === selected &&
-      current.active === true &&
-      current.project === project
-    ) {
-      return
-    }
-    try {
-      session.append(AGENTS_EVENT, { agents, selected, active: true, project })
-    } catch (error) {
-      warn('vibestack: cannot publish agents: %o', error)
-    }
-  }
-
-  /** Sessions with a roster publish already in flight. */
-  const hydrating = new WeakSet()
-
-  /**
-   * Publish the roster before the first turn.
+   * Read the session's persona: its own selection, else the configured default.
    *
-   * The mode is selectable while a session is still blank, and the composer's
-   * Agent menu is driven by the projection alone, so it must exist as soon as
-   * the preset is bound — not only once `agent/pre-step` runs.
+   * The selection lives in the projection, which folds `/vibestack-agent`
+   * invocations; a session that never selected one still runs the default.
    * @param {object} session - session handle.
-   * @returns {Promise<void>} resolves after the projection was appended.
+   * @param {{name: string}[]} list - persona candidates for the current plan.
+   * @returns {string | null} effective agent name.
    */
-  const hydrate = (session) => {
-    if (!config.agents || session === undefined || session === null) return Promise.resolve()
-    if (hydrating.has(session)) return Promise.resolve()
-    hydrating.add(session)
-    return (async () => {
-      try {
-        const cwd = cwdOf(session)
-        if (cwd === null) return
-        const result = await cache.get(cwd)
-        logWarnings(result.warnings)
-        const plan = result.plan
-        if (plan === null || plan.active !== true) return
-        publishAgents(session, plan)
-      } catch (error) {
-        warn('vibestack: cannot publish the agent roster: %o', error)
-      } finally {
-        hydrating.delete(session)
-      }
-    })()
+  const selectedOf = (session, list) => {
+    const projections = ctx.get('sessionProjections')
+    let state
+    try {
+      state = projections?.stateOf?.(session, PROJECTION_KEY)
+    } catch {
+      state = undefined
+    }
+    const current = typeof state?.selected === 'string' ? state.selected : null
+    if (current !== null && list.some((agent) => agent.name === current)) return current
+    return pickDefaultAgent(list, config.defaultAgent)
   }
 
   /**
@@ -288,22 +231,39 @@ export function apply(ctx, rawConfig, deps = {}) {
   }
 
   /**
-   * Inject the rules message for this step, once per digest.
+   * Inject the instructions message for this step, once per digest and roster.
+   *
+   * The roster travels in the message `source`: the harness stores the message
+   * as a `user/message` event, the client projection folds it, and the model
+   * only sees the rule text. No plugin-owned event type is ever written.
    * @param {object} agent - agent handle.
    * @param {Record<string, unknown>} plan - resolved plan.
    * @returns {Promise<Record<string, unknown> | null>} message to append, or null.
    */
-  const injectRules = async (agent, plan) => {
+  const injectInstructions = async (agent, plan) => {
     if (!config.rules) return null
     const rendered = await renderRules(plan, { maxBytes: config.maxRulesBytes })
     if (rendered === null) return null
+    /** @type {{key: string, agents: object[], project: string, defaultSelected: string | null, version: number} | null} */
+    let roster = null
+    if (config.agents) {
+      const list = personaAgents(agentList(plan))
+      roster = createRoster(list, pickDefaultAgent(list, config.defaultAgent), plan.project)
+    }
+    const key = roster?.key ?? ''
+    const stamp = `${rendered.digest}:${key}`
     const record = sessionStateFor(agent.session)
-    if (record.digest === rendered.digest) return null
-    record.digest = rendered.digest
-    if (surfaceHasDigest(agent.session, rendered.digest)) return null
+    if (record.digest === stamp) return null
+    if (surfaceHasPublication(agent.session, rendered.digest, key)) {
+      record.digest = stamp
+      return null
+    }
+    record.digest = stamp
+    const source = { kind: 'vibestack', form: 'instructions', digest: rendered.digest }
+    if (roster !== null) source.roster = roster
     return createUserMessage({
       content: [{ type: 'text', text: rendered.text }],
-      source: { kind: 'vibestack', form: 'instructions', digest: rendered.digest },
+      source,
     })
   }
 
@@ -322,10 +282,9 @@ export function apply(ctx, rawConfig, deps = {}) {
     logWarnings(result.warnings)
     const plan = result.plan
     if (plan === null || plan.active !== true) return null
-    if (config.agents) publishAgents(agent.session, plan)
     syncCommands(plan)
     await syncMcp(plan, agent)
-    return injectRules(agent, plan)
+    return injectInstructions(agent, plan)
   }
 
   ctx.inject(['sessionProjections'], (scope) => {
@@ -346,13 +305,13 @@ export function apply(ctx, rawConfig, deps = {}) {
         text: (assembly) => {
           const agent = assembly?.agent
           if (agent === undefined) return ''
-          const projections = ctx.get('sessionProjections')
-          const selected = projections?.stateOf(agent.session, PROJECTION_KEY)?.selected
-          if (typeof selected !== 'string' || selected.length === 0) return ''
-          const workingDirectory = ctx.get('workingDirectory')
-          const cwd = workingDirectory?.get?.(agent.session)
-          const plan = typeof cwd === 'string' && cwd.length > 0 ? cache.peek(cwd) : null
-          const entry = agentList(plan).find((candidate) => candidate.name === selected)
+          const cwd = cwdOf(agent.session)
+          const plan = cwd === null ? null : cache.peek(cwd)
+          if (plan === null || plan.active !== true) return ''
+          const list = agentList(plan)
+          const selected = selectedOf(agent.session, list)
+          if (selected === null) return ''
+          const entry = list.find((candidate) => candidate.name === selected)
           if (entry === undefined || entry.system.trim().length === 0) return ''
           return `You are acting as the VibeStack agent "${entry.name}".\n\n${entry.system.trim()}`
         },
@@ -391,62 +350,32 @@ export function apply(ctx, rawConfig, deps = {}) {
         name: SELECT_COMMAND,
         description: '选择本会话的 VibeStack Agent（人设）',
         input: { hint: '[agent 名称|list]' },
-        handler: ({ agent, rawInput }) => {
-          const projections = ctx.get('sessionProjections')
-          const current = projections?.stateOf(agent.session, PROJECTION_KEY)
-          const agents = Array.isArray(current?.agents) ? current.agents : []
+        handler: async ({ agent, rawInput }) => {
+          const cwd = cwdOf(agent.session)
+          const result = cwd === null ? null : await cache.get(cwd)
+          if (result !== null) logWarnings(result.warnings)
+          const plan = result?.plan ?? null
+          const agents = plan !== null && plan.active === true ? personaAgents(agentList(plan)) : []
           if (agents.length === 0) {
             return { kind: 'error', text: 'VibeStack: 当前项目没有可选 Agent（先在该项目激活能力组）' }
           }
           const input = String(rawInput ?? '').trim()
           if (input.length === 0 || input === 'list') {
             const names = agents.map((entry) => entry.name).join(', ')
-            return { kind: 'success', text: `VibeStack agents: ${names}（当前：${current.selected ?? '未选择'}）` }
+            return { kind: 'success', text: `VibeStack agents: ${names}（当前：${selectedOf(agent.session, agents) ?? '未选择'}）` }
           }
           const match = agents.find((entry) => entry.name.toLowerCase() === input.toLowerCase())
           if (match === undefined) {
             return { kind: 'error', text: `VibeStack: 未找到 agent "${input}"` }
           }
-          if (current.selected === match.name) {
-            return { kind: 'success', text: `VibeStack: 当前已是 ${match.name}` }
-          }
-          agent.session.append(SELECT_EVENT, { id: match.name })
+          // The command executor logs `command/run` before this handler runs, so
+          // the projection already folded the new selection.
           return { kind: 'success', text: `VibeStack: 已切换 Agent 为 ${match.name}` }
         },
       })
     } catch (error) {
       warn('vibestack: cannot register /%s: %o', SELECT_COMMAND, error)
     }
-  })
-
-  ctx.on('session/event', (session, event) => {
-    if (!config.agents) return undefined
-    if (event?.type !== 'agent-preset/selected') return undefined
-    if (event.data?.agentPreset !== PRESET_ID) return undefined
-    return hydrate(session)
-  })
-
-  ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
-    if (!config.agents) return undefined
-    if (agentPreset !== PRESET_ID) return undefined
-    let session
-    try {
-      session = ctx.get('agents')?.get?.(sessionId)?.session ?? ctx.get('sessions')?.get?.(sessionId)
-    } catch {
-      return undefined
-    }
-    if (session === undefined || session === null) return undefined
-    return hydrate(session)
-  })
-
-  ctx.on('agent/created', (payload) => {
-    if (!config.agents) return undefined
-    const session = payload?.agent?.session
-    if (session === undefined || session === null) return undefined
-    if (presetOf(session) !== PRESET_ID) return undefined
-    // Creation is a serial dispatch; do not make it wait for a CLI round trip.
-    void hydrate(session)
-    return undefined
   })
 
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {

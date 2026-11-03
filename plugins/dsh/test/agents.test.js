@@ -4,14 +4,17 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import {
-  AGENTS_EVENT,
   PROJECTION_KEY,
-  SELECT_EVENT,
+  SELECT_COMMAND,
+  SOURCE_KIND,
   agentList,
   agentSummaries,
   createProjectionDefinition,
+  createRoster,
   personaAgents,
   pickDefaultAgent,
+  rosterKeyOf,
+  rosterFromEvent,
   sameRoster,
 } from '../lib/agents.js'
 
@@ -21,6 +24,29 @@ const PLAN = {
     Hermes: { description: 'worker', mode: 'primary', system: '# Hermes' },
     helper: { description: 'child only', mode: 'subagent', system: '# helper' },
   },
+}
+
+/**
+ * Build the instructions event the plugin writes each step.
+ * @param {{key: string, agents: object[], project: string, defaultSelected: string | null}} roster - roster payload.
+ * @returns {Record<string, unknown>} session event.
+ */
+function instructionsEvent(roster) {
+  return {
+    type: 'user/message',
+    data: {
+      source: { kind: SOURCE_KIND, form: 'instructions', digest: 'digest', roster },
+    },
+  }
+}
+
+/**
+ * Build one `/vibestack-agent` invocation as the executor logs it.
+ * @param {string} args - raw command input.
+ * @returns {Record<string, unknown>} session event.
+ */
+function selectEvent(args) {
+  return { type: 'command/run', data: { commandId: 'c1', name: SELECT_COMMAND, args, source: { kind: 'user' } } }
 }
 
 test('agentList describes every agent in plan order', () => {
@@ -54,57 +80,91 @@ test('sameRoster compares published fields only', () => {
   assert.equal(sameRoster(undefined, []), false)
 })
 
-test('the projection publishes the roster and keeps the selection', () => {
+test('createRoster publishes summaries and a stable key', () => {
+  const list = personaAgents(agentList(PLAN))
+  const roster = createRoster(list, 'Athena', '/proj')
+  assert.equal(roster.version, 1)
+  assert.deepEqual(roster.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
+  assert.equal(roster.project, '/proj')
+  assert.equal(roster.defaultSelected, 'Athena')
+  assert.equal(roster.key, rosterKeyOf(roster.agents, '/proj', 'Athena'))
+  assert.notEqual(roster.key, rosterKeyOf(roster.agents, '/proj', 'Hermes'))
+  assert.notEqual(roster.key, createRoster(list.slice(0, 1), 'Athena', '/proj').key)
+})
+
+test('rosterFromEvent ignores messages that carry no roster', () => {
+  assert.equal(rosterFromEvent({ type: 'user/message', data: { source: { kind: 'user' } } }), null)
+  assert.equal(rosterFromEvent({ type: 'user/message', data: {} }), null)
+  assert.equal(rosterFromEvent({ type: 'command/run', data: {} }), null)
+  assert.equal(rosterFromEvent(undefined), null)
+})
+
+test('the projection publishes the roster carried by an instructions message', () => {
   const definition = createProjectionDefinition()
   assert.equal(definition.key, PROJECTION_KEY)
+
+  const list = personaAgents(agentList(PLAN))
   let state = definition.init({}, 0)
   assert.deepEqual(state.agents, [])
+  assert.equal(state.active, false)
 
-  state = definition.apply(state, {
-    type: AGENTS_EVENT,
-    data: {
-      agents: [{ name: 'Athena', description: 'p', mode: 'all' }],
-      selected: 'Athena',
-      active: true,
-      project: '/proj',
-    },
-  })
+  state = definition.apply(state, instructionsEvent(createRoster(list, 'Athena', '/proj')))
+  assert.deepEqual(state.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
   assert.equal(state.selected, 'Athena')
   assert.equal(state.active, true)
+  assert.equal(state.project, '/proj')
+})
 
-  state = definition.apply(state, { type: SELECT_EVENT, data: { id: 'Athena' } })
+test('the projection folds the selection from the logged command', () => {
+  const definition = createProjectionDefinition()
+  const roster = createRoster(personaAgents(agentList(PLAN)), 'Athena', '/proj')
+  let state = definition.apply(definition.init({}, 0), instructionsEvent(roster))
+
+  state = definition.apply(state, selectEvent('hermes'))
+  assert.equal(state.selected, 'Hermes')
+
+  const listed = definition.apply(state, selectEvent('list'))
+  assert.equal(listed, state)
+
+  const unknown = definition.apply(state, selectEvent('nobody'))
+  assert.equal(unknown, state)
+
+  const blank = definition.apply(state, selectEvent(''))
+  assert.equal(blank, state)
+})
+
+test('the projection keeps a selection the next roster still offers', () => {
+  const definition = createProjectionDefinition()
+  const list = personaAgents(agentList(PLAN))
+  let state = definition.apply(definition.init({}, 0), instructionsEvent(createRoster(list, 'Athena', '/proj')))
+  state = definition.apply(state, selectEvent('Hermes'))
+
+  state = definition.apply(state, instructionsEvent(createRoster(list, 'Athena', '/proj')))
+  assert.equal(state.selected, 'Hermes')
+
+  state = definition.apply(state, instructionsEvent(createRoster(list.slice(0, 1), 'Athena', '/proj')))
   assert.equal(state.selected, 'Athena')
-
-  state = definition.apply(state, { type: SELECT_EVENT, data: { id: 'Unknown' } })
-  assert.equal(state.selected, null)
 })
 
 test('repeating the same roster returns the identical state object', () => {
   const definition = createProjectionDefinition()
-  const payload = {
-    agents: [{ name: 'Athena', description: 'p', mode: 'all' }],
-    selected: 'Athena',
-    active: true,
-    project: '/proj',
-  }
-  const first = definition.apply(definition.init({}, 0), { type: AGENTS_EVENT, data: payload })
-  const second = definition.apply(first, { type: AGENTS_EVENT, data: payload })
+  const event = instructionsEvent(createRoster(personaAgents(agentList(PLAN)), 'Athena', '/proj'))
+  const first = definition.apply(definition.init({}, 0), event)
+  const second = definition.apply(first, event)
   assert.equal(first, second)
 })
 
 test('the wire view is cached per state', () => {
   const definition = createProjectionDefinition()
-  const state = definition.apply(definition.init({}, 0), {
-    type: AGENTS_EVENT,
-    data: { agents: [], selected: null, active: true, project: '/p' },
-  })
+  const state = definition.apply(definition.init({}, 0), instructionsEvent(createRoster([], null, '/p')))
   const first = definition.wire.view(state)
   assert.equal(definition.wire.view(state), first)
-  assert.deepEqual(first, { agents: [], selected: null, active: true, project: '/p' })
+  assert.deepEqual(first, { agents: [], selected: null, active: false, project: '/p' })
 })
 
 test('unrelated events leave the state untouched', () => {
   const definition = createProjectionDefinition()
   const state = definition.init({}, 0)
   assert.equal(definition.apply(state, { type: 'other' }), state)
+  assert.equal(definition.apply(state, { type: 'command/run', data: { name: 'auto-git-commit', args: 'x' } }), state)
 })

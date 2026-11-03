@@ -10,8 +10,9 @@
 // viewport rect, so it is never clipped by the composer card.
 //
 // It renders only while the session runs the `vibestack` agent preset.
-// Selecting an agent runs the mode's `/vibestack-agent <name>` command, which
-// writes the session projection the host applies as the persona.
+// Selecting an agent runs the mode's `/vibestack-agent <name>` command; the
+// command log event is what the `vibestack` projection folds, so the choice
+// survives a restart without any plugin-owned session event type.
 window.__ModuleLoader__.load({
   id: "dsh-vibestack",
   factory: (require) => {
