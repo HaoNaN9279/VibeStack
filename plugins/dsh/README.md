@@ -50,9 +50,9 @@ dsh plugin --profile desktop remove dsh-vibestack
 ## 使用
 
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
-2. 选中模式的那一刻（还没发第一条消息），插件就解析当前会话目录的
-   `.vibestack/stack.json`，把项目里的 Agent 列表写入会话；首次请求时再注入规则、技能、
-   命令与 MCP。
+2. 进入模式后，首个 `agent/pre-step` 解析当前会话目录的 `.vibestack/stack.json`，
+   把规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
+   `source` 里，模型看不到；占位只在会话真正开始工作后出现。
 3. 输入框左下的 **Agent** 菜单（工具行左侧的 `◆` 按钮）切换本会话人设：点开后
    在上方展开独立菜单，列出项目里的 Agent 与说明。默认选择 Core 的 `Athena`；没有
    可选 Agent（项目未激活能力组）时菜单不出现。选择会持久化在会话里。
@@ -73,9 +73,21 @@ dsh plugin --profile desktop remove dsh-vibestack
 | `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能 | 该 agent |
 | `commands` | `ctx.commands.register()`，模板渲染后 `agent.steer()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
-| `agents` | 会话投影（模式选中即发布，每次 `pre-step` 刷新） + 输入框左下 Agent 菜单（独立浮层） + 系统提示词段落 | 该会话 |
+| `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
 
 命令模板支持 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
+
+## 事件约束
+
+DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带 `ignorable: true` 才能保留；
+而活跃会话的 `Session.append()` 无法写这个标记。插件因此**不写任何自定义事件类型**：
+
+- 名册随规则消息的 `source.roster` 落库（`user/message`，模型不可见）；
+- 人设选择由 `/vibestack-agent` 的 `command/run` 事件承载，重启后仍然有效；
+- 投影 `vibestack` 只折叠这两类已知事件，`stateVersion` 变更时旧检查点自动失效。
+
+插件的 `agents` 能力基于规则注入：`rules: false` 或项目没有规则文件时，Agent 菜单不会出现
+（人设段落仍按 `defaultAgent` 生效）。
 
 ## 配置
 
@@ -119,6 +131,7 @@ plugins/dsh/
 ├── index.js             # 宿主半（preset 作用域）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
 ├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP
+├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
 ```
@@ -136,10 +149,24 @@ node test/agents.test.js && node test/config.test.js && node test/commands.test.
   && node test/rules.test.js && node test/skills.test.js && node test/plugin.test.js
 ```
 
-`plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 → Agent 投影 →
-命令注册与执行 → 人设段落切换。它也覆盖提前发布：空会话切到本模式
-（`agent-preset/selected`）、以本模式创建会话（`agent/created`）、其它模式的会话不发布，
-以及 `agents: false` 时不发布。
+`plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 → 名册随消息
+`source` 发布 → 命令注册与执行 → 人设段落跟随 `command/run` 选择。它也断言插件**不向会话
+追加任何事件**（自定义类型会让会话在重启后无法打开）。
+
+### 旧会话修复
+
+0.1.x 写入了 `vibestack/agents` / `vibestack/select` 事件，携带这些事件的会话在 DSH 重启后
+会报 `contains event type ... unknown to this harness and not marked ignorable`。修复脚本给
+这些记录补上 `ignorable: true`（序号不变，其余字节不动），先 `--write` 前的干跑只报告：
+
+```bash
+node scripts/repair-session-events.mjs "~/.dsh/sessions"                              # 干跑，列出待修会话
+node scripts/repair-session-events.mjs "~/.dsh/sessions" --write                      # 就地修复，逐个留 .bak
+node scripts/repair-session-events.mjs "<session 目录或 session.v4.jsonl.zstd>"        # 只查一个
+```
+
+修复前请退出桌面版；修复后重新打开会话，投影会自动从旧事件重建（旧 `vibestack/agents`
+事件按未知可忽略事件保留，不再参与投影）。
 
 安装后检查：
 
@@ -165,5 +192,8 @@ dsh --profile <profile> --dump-config | grep -i -A2 vibestack
 - 解析超时：调大 `timeoutMs` 或 `VIBESTACK_RESOLVE_TIMEOUT_MS`。
 - MCP 未出现：macOS/Windows 桌面版需要 `@deepseek-ai/dsh-mcp-client` 可被运行时解析；
   解析不到时插件只记一条告警并跳过，其它能力不受影响。
-- Agent 菜单不出现：确认会话模式是 VibeStack，且项目至少激活了一个含 `agents/` 的
-  能力组（Core 自带 `Athena`、`Hermes`）。
+- Agent 菜单不出现：确认会话模式是 VibeStack，项目至少激活了一个含 `agents/` 的
+  能力组（Core 自带 `Athena`、`Hermes`），且规则注入未被 `rules: false` 关掉；
+  新会话要等第一轮注入之后才出现菜单。
+- 历史加载失败并提示 `event type "vibestack/..." ... not marked ignorable`：会话由
+  0.1.x 写入，用上面的修复脚本补标记。
