@@ -146,27 +146,36 @@ plugins/dsh/
 # 用 DSH 运行时的 node（沙箱内不能跑 `node --test <dir>`：子进程管道会被拦）
 node test/agents.test.js && node test/config.test.js && node test/commands.test.js \
   && node test/mcp.test.js && node test/plans.test.js && node test/resolve.test.js \
-  && node test/rules.test.js && node test/skills.test.js && node test/plugin.test.js
+  && node test/rules.test.js && node test/skills.test.js && node test/repair.test.js \
+  && node test/plugin.test.js
 ```
 
-`plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 → 名册随消息
-`source` 发布 → 命令注册与执行 → 人设段落跟随 `command/run` 选择。它也断言插件**不向会话
-追加任何事件**（自定义类型会让会话在重启后无法打开）。
+`repair.test.js` 用合成的 v4 日志覆盖：补标记、保留 header 独立帧、幂等、拒绝撕裂尾部、
+备份与原子替换。`plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 →
+名册随消息 `source` 发布 → 命令注册与执行 → 人设段落跟随 `command/run` 选择。它也断言插件
+**不向会话追加任何事件**（自定义类型会让会话在重启后无法打开）。
 
 ### 旧会话修复
 
 0.1.x 写入了 `vibestack/agents` / `vibestack/select` 事件，携带这些事件的会话在 DSH 重启后
 会报 `contains event type ... unknown to this harness and not marked ignorable`。修复脚本给
-这些记录补上 `ignorable: true`（序号不变，其余字节不动），先 `--write` 前的干跑只报告：
+这些记录补上 `ignorable: true`（序号不变，其余记录不动），先干跑只报告：
 
 ```bash
-node scripts/repair-session-events.mjs "~/.dsh/sessions"                              # 干跑，列出待修会话
-node scripts/repair-session-events.mjs "~/.dsh/sessions" --write                      # 就地修复，逐个留 .bak
-node scripts/repair-session-events.mjs "<session 目录或 session.v4.jsonl.zstd>"        # 只查一个
+node scripts/repair-session-events.mjs                                    # 默认扫描 ~/.dsh/sessions，干跑
+node scripts/repair-session-events.mjs --write                            # 就地修复，逐个留 .bak
+node scripts/repair-session-events.mjs "<session 目录或 session.v4.jsonl.zstd>"  # 只查一个
 ```
 
-修复前请退出桌面版；修复后重新打开会话，投影会自动从旧事件重建（旧 `vibestack/agents`
-事件按未知可忽略事件保留，不再参与投影）。
+DSH 的物理格式要求**第一个 Zstandard 帧只包含 header 行**，后面每个追加批次一帧。脚本
+按帧结构解码，重写时把 header 与事件体压成两个独立帧；不能把整个日志压成一帧，否则会
+报 `first frame is not exactly one header line`。写入是“临时文件 + fsync + 原子替换”，原
+文件保留为 `session.v4.jsonl.zstd.bak`。旧脚本（0.2.0 之前）会把整个日志压成一帧，已在
+本版本修正。
+
+安装新插件并重启**不会**改写已有日志：新代码只保证不再写入自定义事件，历史修复仍需
+跑一次脚本。修复前请退出桌面版；修复后重新打开会话，投影会自动从旧事件重建（旧
+`vibestack/agents` 事件按未知可忽略事件保留，不再参与投影）。
 
 安装后检查：
 
