@@ -13,8 +13,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   host: true,
   /** Optional layer file; empty uses the global VibeStack config. */
   modelsFile: '',
-  /** `additive` adds a layer control; `replace` also shadows the model seat. */
-  modelSelector: 'additive',
+  /** `replace` shadows the model seat; `additive` keeps it and adds a layer control. */
+  modelSelector: 'replace',
   /** Apply the layer declared by the selected Agent persona. */
   applyModelOnAgent: true,
   /** Apply the layer declared by a capability-group command. */

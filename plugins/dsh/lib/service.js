@@ -7,9 +7,11 @@
  */
 
 import {
+  BUILTIN_LAYER,
   layersDigest,
   readModels,
   resolveModelsPath,
+  withBuiltinLayer,
   writeModels,
 } from './layers.js'
 
@@ -106,10 +108,11 @@ export class VibeStackService {
   async reload() {
     try {
       const next = await readModels(this.#file)
-      this.layers = next.layers
-      this.default = next.default
+      const layers = withBuiltinLayer(next.layers)
+      this.layers = layers
+      this.default = next.default ?? (layers[0]?.id === BUILTIN_LAYER.id ? BUILTIN_LAYER.id : null)
       this.warnings = next.warnings
-      this.digest = layersDigest(next.layers)
+      this.digest = layersDigest(layers)
       for (const warning of next.warnings) this.logger?.warn?.(`vibestack: ${warning}`)
       return { layers: this.listLayers(), default: this.default, warnings: this.listWarnings() }
     } catch (error) {

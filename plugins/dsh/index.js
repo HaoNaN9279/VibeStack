@@ -24,7 +24,6 @@ import {
   agentList,
   createProjectionDefinition,
   createRoster,
-  personaAgents,
   pickDefaultAgent,
 } from './lib/agents.js'
 import { commandEntries, renderTemplate } from './lib/commands.js'
@@ -375,9 +374,8 @@ export function apply(ctx, rawConfig, deps = {}) {
       state = undefined
     }
     const current = typeof state?.selected === 'string' ? state.selected : null
-    const personas = personaAgents(list)
-    if (current !== null && personas.some((agent) => agent.name === current)) return current
-    return pickDefaultAgent(personas, config.defaultAgent)
+    if (current !== null && list.some((agent) => agent.name === current)) return current
+    return pickDefaultAgent(list, config.defaultAgent)
   }
 
   /**
@@ -507,11 +505,10 @@ export function apply(ctx, rawConfig, deps = {}) {
     /** @type {{key: string, agents: object[], project: string, defaultSelected: string | null, version: number} | null} */
     let roster = null
     if (config.agents) {
-      // Publish every agent so subagent sessions can inspect the full union;
-      // the persona picker filters `mode: subagent` on both sides.
+      // Publish every agent in the Core + workspace union; the left menu lists
+      // all of them, including subagent-only definitions.
       const list = agentList(plan)
-      const personas = personaAgents(list)
-      roster = createRoster(list, pickDefaultAgent(personas, config.defaultAgent), plan.project)
+      roster = createRoster(list, pickDefaultAgent(list, config.defaultAgent), plan.project)
     }
     const key = roster?.key ?? ''
     const stamp = `${rendered.digest}:${key}`
@@ -684,7 +681,7 @@ export function apply(ctx, rawConfig, deps = {}) {
           const result = cwd === null ? null : await cache.get(cwd)
           if (result !== null) logWarnings(result.warnings)
           const plan = result?.plan ?? null
-          const agents = planUsable(plan) ? personaAgents(agentList(plan)) : []
+          const agents = planUsable(plan) ? agentList(plan) : []
           if (agents.length === 0) {
             return { kind: 'error', text: 'VibeStack: 当前项目没有可选 Agent（先在该项目激活能力组）' }
           }

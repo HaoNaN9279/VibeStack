@@ -39,6 +39,18 @@ async function serviceWith(document = { models: { layers: [] } }) {
   return { service, dir, file }
 }
 
+test('an empty config exposes the built-in DeepSeek Flash layer', async () => {
+  const { service, dir } = await serviceWith({ models: { layers: [] } })
+  try {
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), ['flash'])
+    assert.equal(service.defaultLayer(), 'flash')
+    assert.equal(service.resolveLayer('flash').model, 'deepseek-flash')
+    assert.equal(service.resolveLayer('flash').provider, 'deepseek-account')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('the service exposes API v2 and layer lookup', async () => {
   const { service, dir } = await serviceWith({
     models: {

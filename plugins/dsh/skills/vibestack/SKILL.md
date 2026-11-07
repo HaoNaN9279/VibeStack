@@ -77,7 +77,8 @@ vibe-stack tool serve <tool>      # MCP stdio
 
 能力组 Agent / 命令 / 技能可以写可选的 `model: <layer>`。层是本机配置
 （`~/.config/vibestack/config.json` 的 `models` 段），不含凭据；设置页
-「VibeStack 模型层」可增删改，输入框左下的 `◈` 菜单切换当前会话的层。
+「VibeStack 模型层」可增删改，输入框右下角的模型位切换当前会话的层；左下角始终是
+Agent 选择。未配置层时使用内置 `flash` 通用层（`deepseek-account/deepseek-flash`）。
 `/vibestack-layer` 可列出层，`/vibestack-layer strong` 直接切换。层只影响会话路由，
 不改变工具、权限或沙箱；未定义层只告警，不阻断提示词。
 

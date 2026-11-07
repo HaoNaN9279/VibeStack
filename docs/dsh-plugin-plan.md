@@ -264,6 +264,9 @@ slug(x)   = lowercase(x) → 空格/下划线/非法字符 → "-" → 折叠连
 - `provider` / `model`：DSH 的 provider id 与模型 id（`sessionController.modelCatalog()` 的取值）。
 - `reasoningEffort`：可选；模型不发布该强度时忽略并 warn。
 - **层是用户配置，不是能力组内容**：能力组只有 `model: <layer id>`，永远不出现 provider/model/温度。这样能力组保持可共享，模型路由留在本机（也保住 AGENTS 规则 11 的意图）。
+- **通用回退层**：用户没有配置任何层时，服务提供内置 `flash`
+  （`deepseek-account / deepseek-flash`，标签「DeepSeek Flash（通用）」）并设为默认；一旦用户
+  配置了层，就不再注入该回退。
 
 ### 7.2 设置面板
 
@@ -280,13 +283,13 @@ slug(x)   = lowercase(x) → 空格/下划线/非法字符 → "-" → 折叠连
 
 | 方案 | 做法 | 评价 |
 | --- | --- | --- |
-| **A（可选 `replace`）** | 在 `conversation.input.model`（single）用 priority -1 注册；VibeStack 会话显示层，其它会话回退实时原生目录（`directory.store.groups`） | 满足“替换”需求；仍会全局替换原生组件，但不会让标准模式失去模型选择 |
-| **B（默认 `additive`）** | 不遮蔽：在 `conversation.input.left` 加 `◈` 模型层控件；内置模型选择位保留 | 零遮蔽风险；默认实现 |
-| 配置 | `modelSelector` 取 `replace` 或 `additive`，默认 `additive`；`replace` 需重启后生效 | 可运维 |
+| **A（默认 `replace`）** | 在 `conversation.input.model`（single）用 priority -1 注册；VibeStack 会话显示层，其它会话回退实时原生目录（`directory.store.groups`） | 满足“右下角模型位改为层选择”；组件在其它模式仍提供原生模型选择 |
+| **B（兼容 `additive`）** | 不遮蔽：在 `conversation.input.left` 加层控件；内置模型选择位保留 | 零遮蔽风险，但左下角会多出一个控件 |
+| 配置 | `modelSelector` 取 `replace` 或 `additive`，默认 `replace`；切换需重启后生效 | 可运维 |
 
-> DSH 的 `single` 槽位允许“不同 priority 遮蔽”，但注册本身是全局的。`replace` 因此是
-> 可选项：组件在非 VibeStack 会话渲染原生目录，避免标准模式出现空选择位。默认仍用
-> `additive`，不改动现有 UI。
+> DSH 的 `single` 槽位允许“不同 priority 遮蔽”，但注册本身是全局的。`replace` 组件
+> 在非 VibeStack 会话渲染原生目录，因此默认启用；`additive` 仅作为兼容回退。
+> **左下角始终保留 Agent 选择**，模型层不再放在左侧。
 
 方案 A 的边界（写进实现约束）：
 
@@ -348,7 +351,7 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | `model:` 引用了未定义的层 | 应用时 warn `layer-unknown`；`vibestack-layer` 列表不显示该层；命令/人设照常工作（不切模型） |
 | 层存在但 provider/model 不在 catalog | `catalog()` 标记 `unroutable`；实际 `selectModel` 失败时返回 `layer-unroutable` 并 warn |
 | 账号退登 / 凭据缺失 | 保留层定义；不删配置；选择失败只告警 |
-| `/model` 手动切到未映射路由 | `◈` 控件显示「未映射」，不强行套层 |
+| `/model` 手动切到未映射路由 | 右下角模型位显示「未映射」，不强行套层 |
 | 设置页写入失败 | 返回 `{ok:false, code, warnings}`；不部分写入（临时文件 + 原子替换） |
 | DSH 槽位变更导致 `replace` 行为变化 | 当前只用 `additive`，不遮蔽原生模型选择 |
 
@@ -415,7 +418,7 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | P2-1 `createUserMessage` | 优先通过 `loadHarnessModule('@deepseek-ai/dsh-llm')` 使用 harness 工厂；不可用时回退本地实现（测试路径） |
 | P1-4 `Config` schema | 动态加载 `@deepseek-ai/schemastery` 并导出可选 `Config`；普通 Node 测试/降级组合下 schema 缺失，继续用 `resolveConfig()` |
 | 模型层 | `lib/layers.js` / `lib/service.js` / `lib/models-route.js`；设置页；`vibestack-layer` 命令；agent / command / skill 三处应用；默认层 |
-| 模型层 UI | 默认 `conversation.input.left` 的 `◈` 增量控件；可选 `modelSelector: replace` 用 priority -1 遮蔽 `conversation.input.model`，非 VibeStack 会话回退原生目录 |
+| 模型层 UI | 默认 `modelSelector: replace`：右下角 `conversation.input.model` 替换为层选择，非 VibeStack 会话回退原生目录；左下角只保留 Agent |
 
 未处理（仍待后续里程碑）：GUI 手工验收（设置页、`replace` 模型位、`◈` 控件）。
 
@@ -480,7 +483,7 @@ ctx.vibestack = {
 | `skillRank` | `250` | **已实现**：skill 候选 rank |
 | `role` | `'preset'` | **已实现**：`core` / `preset` / `ui` |
 | `modelsFile` | `''` | **core 行**：层定义文件；空则用全局配置 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `'additive'` | **core 行**：`additive` 左侧 `◈` 控件；`replace` 遮蔽原生模型位（非 VibeStack 会话回退原生目录） |
+| `modelSelector` | `'replace'` | **core 行**：`replace` 右下角原生模型位替换为层选择（非 VibeStack 回退原生目录）；`additive` 保留原生位并加左侧控件 |
 | `applyModelOnCommand` | `true` | **已实现**：命令声明 `model` 时切换会话模型 |
 | `applyModelOnAgent` | `true` | **已实现**：切换人设时应用其层 |
 | `applyModelOnSkill` | `true` | **已实现**：用户 `/skill` 调用时应用其层（同回合尽力而为） |
@@ -572,7 +575,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | **M8** group-forge 拆组 | 6 个 `custom-*` 移出 Core；新增 `custom-group`、规则、`Hephaestus`、2 个命令；仓库 `stack.json` 激活 | `vibe-stack resolve --mode vibestack` 在仓库根目录无告警；Core 不含 `custom-*` |
 | **M9** 子会话并集 | 同一 preset 下的子会话按同一份计划生成名册；不同 cwd 按子目录解析 | 父/子会话同 cwd 名册一致；子会话不写自有事件 |
 | **M10** OpenCode 退场 | 删除 `plugins/opencode/`；CLI `plugin install` 退场；README / AGENTS / architecture / plugins README 改写；能力组文案清理 | `plugins/` 只剩 `dsh`；除历史资料外无 OpenCode 引用 |
-| **M11** 模型层核心 + 增量选择器 | core 行 `ctx.vibestack`；层配置/原子写；设置页 GET/POST；`vibestack-layer`；Agent/命令/技能应用；`◈` 增量选择器 | `resolveLayer('strong')` 可读；坏配置保留旧快照；三处来源均有测试 |
+| **M11** 模型层核心 + 模型位替换 | core 行 `ctx.vibestack`；层配置/原子写；设置页 GET/POST；`vibestack-layer`；Agent/命令/技能应用；右下角模型位替换（非 VibeStack 回退原生目录） | `resolveLayer('strong')` 可读；无层时内置 `flash`；三处来源均有测试 |
 
 后续里程碑（模型中间层等，仍未实施）：
 
@@ -595,7 +598,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 3. **Core 常驻与并集**：无 stack 只含 Core；有 stack 时 Core + groups + extends；roster 带 `group`；技能/命令 canonical；跨工作区命令拒绝。
 4. **子会话**：同一 cwd 父/子名册一致；不同 cwd 只含 Core；子会话不追加自有事件。
 5. **服务**：`resolveLayer` / `reload` / 坏文件保留旧快照；设置页路由的 GET/POST、原子写、非法输入；`catalog()` 的 available/unroutable。
-6. **客户端**：`◈` 增量选择器的派生（命中/未映射）、只在 vibestack preset 出现；完整 `replace` 仍待回归。
+6. **客户端**：右下角模型位的层派生（命中/未映射）、只在 vibestack preset 出现层列表、其它模式回退原生目录；左侧只保留 Agent。
 7. **回归**：现有 `plugin.test.js` 的"不写自有事件"断言；Agent 选择投影；MCP 同步；repair 脚本；group-forge 仓库级测试。
 8. **手工**：桌面版与 web profile 各一遍：无 stack 目录进入 VibeStack 模式、Agent 菜单并集、`/vibestack-core-*` 与 `/vibestack-group-forge-*`、子会话名册。
 
@@ -607,7 +610,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | --- | --- | --- |
 | DSH rc 的槽位/服务签名变化 | 模型选择器或命令注册失效 | 探针脚本纳入回归；`replace` 失败回落 `additive`；`engines.dsh` 绑定次版本 |
 | 遮蔽 `conversation.input.model` 与内置行为分叉 | 键盘/搜索/推理强度体验退化 | 当前用 `additive` 增量控件，不遮蔽；完整 `replace` 待解决“仅 VibeStack 会话遮蔽”后启用 |
-| 全局 `single` 槽位无法按会话选择性遮蔽 | 根级 UI 行注册会同时影响标准模式 | 默认 `additive`；`replace` 为可选项，组件对非 VibeStack 会话渲染原生模型目录 |
+| 全局 `single` 槽位无法按会话选择性遮蔽 | 根级 UI 行注册会同时影响标准模式 | 默认 `replace`；组件对非 VibeStack 会话渲染原生模型目录，`additive` 可回退 |
 | 设置页写入与用户手动编辑并发 | 配置被覆盖 | 原子替换 + 写入前重读合并 `models` 段；其它段保留 |
 | `models.default` 覆盖用户已有模型选择 | 新会话路由意外改变 | 仅首次 pre-step 且 `modelSelection` 投影为空时应用；`applyDefaultLayer: false` 可关闭 |
 | 命名空间破坏旧习惯 | 用户输入旧名无效 | 迁移表 + `legacyAliases`（默认关） |
@@ -631,7 +634,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | --- | --- | --- |
 | D1 | 层定义存哪 | VibeStack 全局配置（`~/.config/vibestack/config.json` 的 `models` 段），不进能力组、不进项目 |
 | D2 | 层里能放什么 | 只放 provider/model/reasoningEffort/展示文案；凭据归 DSH |
-| D3 | 会话选择器如何实现 | 默认 `additive`：`conversation.input.left` 的 `◈` 控件；可选 `replace` 用 priority -1 遮蔽，非 VibeStack 会话回退原生目录 |
+| D3 | 会话选择器如何实现 | 默认 `replace`：优先遮蔽 `conversation.input.model`，非 VibeStack 会话回退原生目录；左侧只保留 Agent；`additive` 为兼容回退 |
 | D4 | 当前层如何持久化 | 不持久化，按会话当前路由反查；避免两份真相 |
 | D5 | 命令名格式 | `vibestack-<group>-<name>` 小写 kebab；大写形式不可注册（DSH 语法） |
 | D6 | 命令投递方式 | `followup()`（下一个回合），不用 `steer()` |
@@ -874,7 +877,7 @@ primary/all，命令与技能是同一份 canonical 并集。不需要额外工�
 | resolver | `schema_version 2`、`mode`、`--mode vibestack`、Core 合成、fingerprint 纳入 mode |
 | group-forge | 新领域组；6 个 `custom-*` 从 Core 移入；新增 `custom-group`、规则、Agent、2 个命令 |
 | 插件 | `resolveMode` / `namePrefix` / `maxCommandNameLength` / `skillRank`；`lib/names.js`、`lib/plan.js`；canonical 命令与技能；`followup`；当前工作区校验；roster `group`（projection v3） |
-| 客户端 | Agent 菜单显示来源组；`◈` 模型层增量选择器；设置页「VibeStack 模型层」 |
+| 客户端 | 左下角 Agent 菜单显示全部 Agent 与来源组；右下角模型位替换为层选择（非 VibeStack 回退原生）；设置页「VibeStack 模型层」 |
 | 模型层 | `lib/layers.js`、`lib/service.js`、`lib/models-route.js`；`vibestack-core` 行 `ctx.provide`；GET/POST `/api/vibestack/models`；`vibestack-layer` 命令；Agent/命令/技能/默认层应用 |
 | 文档 | 本文件、`AGENTS.md`、根 `README.md`、`plugins/README.md`、`plugins/dsh/README.md`、`docs/resolve-api.md`、`docs/architecture.md`、插件自带 skill |
 | OpenCode 退场 | `plugins/opencode/` 删除；CLI `plugin install` 移除；`plugin list/status` 保留自省；能力组文案清理 |

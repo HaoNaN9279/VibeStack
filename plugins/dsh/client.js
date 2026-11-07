@@ -920,9 +920,9 @@ window.__ModuleLoader__.load({
       }
 
       const roster = state && Array.isArray(state.agents) ? state.agents : [];
-      // Subagent-only agents are published for subagent sessions but cannot be
-      // chosen as the session persona.
-      const agents = roster.filter((agent) => agent && agent.mode !== "subagent");
+      // The left menu lists every Agent in Core + the current workspace union,
+      // including subagent-only definitions.
+      const agents = roster.filter((agent) => agent && typeof agent.name === "string");
       const selected =
         state && typeof state.selected === "string" && agents.some((agent) => agent.name === state.selected)
           ? state.selected
@@ -1179,30 +1179,8 @@ window.__ModuleLoader__.load({
           AgentPicker
         )
       );
-      ctx.slots.inject("conversation.input.left", () =>
-        ctx.slots.register(
-          {
-            name: "conversation.input.left",
-            id: "vibestack-layer",
-            order: 6,
-            inject: (sessionId) => ({
-              onApply: async (id) => {
-                const result = await ctx.remote.commands.execute(
-                  sessionId,
-                  "/vibestack-layer " + id,
-                  []
-                );
-                if (result && result.ok === false) {
-                  throw new Error(
-                    `vibestack: ${result.error?.code ?? "command-failed"}: ${result.error?.message ?? ""}`
-                  );
-                }
-              }
-            })
-          },
-          LayerPicker
-        )
-      );
+      // The model-layer selector lives in the right-hand model seat, not in the
+      // left strip: that strip belongs to the Agent picker.
       ctx.slots.inject("settings.section", () =>
         ctx.slots.register(
           {
@@ -1219,6 +1197,33 @@ window.__ModuleLoader__.load({
       // catalog outside VibeStack sessions, so the model seat never goes blank.
       void readLayerConfig()
         .then((payload) => {
+          if (payload.selector === "additive") {
+            ctx.slots.inject("conversation.input.left", () =>
+              ctx.slots.register(
+                {
+                  name: "conversation.input.left",
+                  id: "vibestack-layer",
+                  order: 6,
+                  inject: (sessionId) => ({
+                    onApply: async (id) => {
+                      const result = await ctx.remote.commands.execute(
+                        sessionId,
+                        "/vibestack-layer " + id,
+                        []
+                      );
+                      if (result && result.ok === false) {
+                        throw new Error(
+                          `vibestack: ${result.error?.code ?? "command-failed"}: ${result.error?.message ?? ""}`
+                        );
+                      }
+                    }
+                  })
+                },
+                LayerPicker
+              )
+            );
+            return;
+          }
           if (payload.selector !== "replace") return;
           if (typeof ctx.inject !== "function") return;
           ctx.inject(["slots", "modelDirectories", "sessions"], (scope) => {

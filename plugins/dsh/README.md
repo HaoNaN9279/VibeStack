@@ -56,12 +56,11 @@ dsh plugin --profile desktop remove dsh-vibestack
    当前会话目录：Core 始终参与，领域能力组按该目录的 `.vibestack/stack.json` 并集参与。
    规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
    `source` 里，模型看不到；占位只在会话真正开始工作后出现。
-3. 输入框左下的 **Agent** 菜单（工具行左侧的 `◆` 按钮）切换本会话人设：点开后
-   在上方展开独立菜单，列出 **Core 的 Agent + 当前工作区依赖的能力组的 Agent 并集**
-   （`mode: subagent` 的 Agent 只进入名册/子任务，不进入人设菜单），并标注每个 Agent
-   的来源组。默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。
-   选择会持久化在会话里。
-4. 也可以直接运行命令：
+3. 输入框左下的 **Agent** 菜单（`◆` 按钮）切换本会话人设：列出 **Core 的 Agent +
+   当前工作区依赖的能力组的全部 Agent**（包括 `mode: subagent` 的定义），并标注来源组。
+   默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。选择会持久化。
+4. 输入框右下角的模型位替换为 **模型层** 选择（未配置时用内置 `flash` 通用层兜底）；
+   选层等价于切换会话模型路由。也可以用命令：
 
 ```text
 /vibestack-agent           # 列出可选 Agent 与当前选择
@@ -114,9 +113,11 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 - 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
 - 设置页 **VibeStack 模型层** 可增删改层、设默认层，并用 `catalog()` 检测哪些层当前可路由；
   写入是原子替换。
-- 输入框左下的 **模型层** 菜单（`◈`）是增量控件，不遮蔽 DSH 自带的模型选择。
-  `modelSelector: replace` 可选：用低 priority 遮蔽原生模型位，VibeStack 会话显示层，
-  其它模式的会话回退到实时原生模型目录（不会出现空选择位）。默认仍是 `additive`。
+- **左下角始终是 Agent 选择**：列出 Core + 当前工作区能力组的全部 Agent。
+- **右下角模型位替换为模型层选择**：`modelSelector: replace`（默认）用低 priority 遮蔽
+  `conversation.input.model`；VibeStack 会话显示层，其它模式回退到实时原生模型目录。
+  `modelSelector: additive` 可退回“保留原生模型位 + 左下角额外层控件”的兼容形态。
+- 未配置任何层时，服务提供内置通用层 `flash`：`deepseek-account / deepseek-flash`。
 - **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的
   `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效；失败只告警，
   不阻断人设/命令/技能。
@@ -168,7 +169,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
   config:
     role: core
     modelsFile: ''
-    modelSelector: additive     # 或 replace
+    modelSelector: replace      # 或 additive
 
 # 会话模式
 - id: vibestack
@@ -199,7 +200,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `role` | `preset` | `core`：根级服务/设置路由；`preset`：会话模式；`ui`：纯客户端行 |
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
 | `modelsFile` | `''` | **core 行**：层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `additive` | **core 行**：`additive` 左下角增量层控件；`replace` 遮蔽原生模型位，非 VibeStack 会话回退原生目录 |
+| `modelSelector` | `replace` | **core 行**：`replace` 右下角原生模型位替换为层选择（非 VibeStack 会话回退原生目录）；`additive` 保留原生位并在左下角加层控件 |
 | `applyModelOnAgent` | `true` | 切换人设时应用其 `model` 层 |
 | `applyModelOnCommand` | `true` | 执行能力组命令时应用其 `model` 层 |
 | `applyModelOnSkill` | `true` | 用户 `/vibestack-...` 调技能时应用其 `model` 层 |

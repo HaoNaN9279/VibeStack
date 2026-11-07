@@ -23,6 +23,28 @@ export const MAX_LAYER_ID = 32
 export const CONFIG_RELATIVE = path.join('.config', 'vibestack', 'config.json')
 
 /**
+ * Built-in generic layer used when the user has not configured any layers.
+ * It matches the DSH desktop default (`deepseek-account` / `deepseek-flash`).
+ */
+export const BUILTIN_LAYER = Object.freeze({
+  id: 'flash',
+  label: 'DeepSeek Flash（通用）',
+  provider: 'deepseek-account',
+  model: 'deepseek-flash',
+  description: '未配置模型层时使用的通用模型适配',
+})
+
+/**
+ * Add the built-in layer only when the user configured none.
+ * @param {object[]} layers - configured layers.
+ * @returns {object[]} configured layers or `[BUILTIN_LAYER]`.
+ */
+export function withBuiltinLayer(layers) {
+  if (layers.length > 0) return layers
+  return [{ ...BUILTIN_LAYER }]
+}
+
+/**
  * Resolve the layer file path.
  * @param {string} [modelsFile] - row config override; `~` is expanded.
  * @returns {string} absolute path.
