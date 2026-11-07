@@ -103,6 +103,18 @@ test('rosterFromEvent ignores messages that carry no roster', () => {
   assert.equal(rosterFromEvent(undefined), null)
 })
 
+test('rosterFromEvent reads the repaired log-only roster record', () => {
+  const roster = createRoster(personaAgents(agentList(PLAN)), 'Athena', '/proj')
+  const event = {
+    type: 'vibestack/roster',
+    ignorable: true,
+    data: { source: { kind: SOURCE_KIND, roster } },
+  }
+  assert.deepEqual(rosterFromEvent(event).agents.map((agent) => agent.name), ['Athena', 'Hermes'])
+  assert.equal(rosterFromEvent({ ...event, ignorable: undefined }), null)
+  assert.equal(rosterFromEvent({ ...event, data: { source: { kind: 'user', roster } } }), null)
+})
+
 test('the projection publishes the roster carried by an instructions message', () => {
   const definition = createProjectionDefinition()
   assert.equal(definition.key, PROJECTION_KEY)
@@ -117,6 +129,21 @@ test('the projection publishes the roster carried by an instructions message', (
   assert.equal(state.selected, 'Athena')
   assert.equal(state.active, true)
   assert.equal(state.project, '/proj')
+})
+
+test('the projection records a selection made before the first roster', () => {
+  const definition = createProjectionDefinition()
+  const early = definition.apply(definition.init({}, 0), selectEvent('hermes'))
+  assert.equal(early.selected, 'hermes')
+  assert.equal(early.active, false)
+
+  const roster = createRoster(personaAgents(agentList(PLAN)), 'Athena', '/proj')
+  const settled = definition.apply(early, instructionsEvent(roster))
+  assert.equal(settled.selected, 'Hermes')
+  assert.equal(settled.active, true)
+
+  const unknown = definition.apply(definition.apply(definition.init({}, 0), selectEvent('nobody')), instructionsEvent(roster))
+  assert.equal(unknown.selected, 'Athena')
 })
 
 test('the projection folds the selection from the logged command', () => {

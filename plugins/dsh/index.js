@@ -6,9 +6,14 @@
  * the persona section — lands in that agent's scope. No other working mode is
  * touched.
  *
- * The agent roster is published as soon as the preset is bound (mode selected
- * on a blank session, agent created, or session resumed), so the composer's
- * Agent menu exists before the first turn; `agent/pre-step` keeps it fresh.
+ * The roster is written only from `agent/pre-step`, i.e. after the harness has
+ * appended its first `system/message`. `system/message` must be the first
+ * surface event of a stored session, so appending a `user/message` on preset
+ * selection would make the log unreadable after a restart. Binding the preset
+ * still resolves the plan and registers commands; the composer reads the
+ * roster before the first turn through the read-only `/api/vibestack/roster`
+ * route served by the core row, so the Agent menu exists without touching the
+ * log.
  *
  * Everything here is failure-open: a missing CLI, a broken stack, an
  * unexpected payload, or an unavailable optional service degrades to a log line.
@@ -35,6 +40,7 @@ import { createModelsRoute } from './lib/models-route.js'
 import { planUsable, unusablePlanReason } from './lib/plan.js'
 import { PlanCache } from './lib/plans.js'
 import { resolvePlan as resolveProjectPlan } from './lib/resolve.js'
+import { createRosterRoute } from './lib/roster-route.js'
 import { renderRules } from './lib/rules.js'
 import { VibeStackService } from './lib/service.js'
 import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skills.js'
@@ -106,24 +112,59 @@ export function applyCore(ctx, config) {
     modelSelector: config.modelSelector,
     logger,
   })
+  const cache = new PlanCache((cwd) => resolveProjectPlan(cwd, config))
   try {
     if (typeof ctx.provide === 'function') ctx.provide('vibestack', service)
   } catch (error) {
     logger?.warn?.('vibestack: cannot provide ctx.vibestack: %o', error)
   }
   void service.reload()
+
+  /**
+   * Resolve the persona roster for one live session without touching its log.
+   *
+   * The composer needs the roster before the first turn, but a session cannot
+   * carry a surface event until the harness has written its first
+   * `system/message` head. This read-only route lets the client fill that gap;
+   * the authoritative publication still happens in `agent/pre-step`.
+   * @param {string} sessionId - session id from the client.
+   * @returns {Promise<object | null>} roster payload, or null when unavailable.
+   */
+  const rosterForSession = async (sessionId) => {
+    const sessions = ctx.get('sessions')
+    const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined
+    if (session === undefined || session === null) return null
+    const workingDirectory = ctx.get('workingDirectory')
+    let cwd
+    try {
+      cwd = workingDirectory?.get?.(session)
+    } catch {
+      return null
+    }
+    if (typeof cwd !== 'string' || cwd.length === 0) return null
+    const result = await cache.get(cwd)
+    for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
+    const plan = result.plan
+    if (!planUsable(plan)) return null
+    const list = agentList(plan)
+    const personas = personaAgents(list)
+    return createRoster(list, pickDefaultAgent(personas, config.defaultAgent), plan.project)
+  }
+
   ctx.inject(['connection'], (scope) => {
     try {
       const registry = scope.connection?.fetch
       if (typeof registry?.register !== 'function') {
-        logger?.warn?.('vibestack: no Fetch route registry; model settings stay file-only')
+        logger?.warn?.('vibestack: no Fetch route registry; roster and model settings stay file-only')
         return
       }
       registry.register(createModelsRoute({ service }))
+      registry.register(createRosterRoute({ rosterForSession }))
     } catch (error) {
-      logger?.warn?.('vibestack: cannot register the models route: %o', error)
+      logger?.warn?.('vibestack: cannot register a Fetch route: %o', error)
     }
   })
+  ctx.effect(() => () => cache.clear(), 'vibestack: release the roster plan cache')
   return service
 }
 
@@ -614,23 +655,23 @@ export function apply(ctx, rawConfig, deps = {}) {
     return injectInstructions(agent, plan)
   }
 
-  /** Sessions with an early-roster publish already in flight. */
-  const hydrating = new WeakSet()
+  /** Sessions with a preset-binding prime already in flight. */
+  const priming = new WeakSet()
 
   /**
-   * Publish the roster before the first turn.
+   * Resolve the plan and register commands when the preset is bound.
    *
-   * The mode can be selected while a session is still blank, and the composer's
-   * Agent menu is driven by the injected message's `source.roster`. Appending
-   * the same message here makes the menu exist immediately; `agent/pre-step`
-   * deduplicates it later by digest/roster key.
+   * This deliberately writes nothing to the session: a surface event appended
+   * before the harness's first `system/message` violates the stored session
+   * format. The roster reaches the client through the read-only core route;
+   * `agent/pre-step` publishes it durably once the step has opened.
    * @param {object} session - session handle.
-   * @returns {Promise<void>} resolves after the append attempt.
+   * @returns {Promise<void>} resolves after the attempt.
    */
-  const hydrate = (session) => {
+  const prime = (session) => {
     if (!config.agents || session === undefined || session === null) return Promise.resolve()
-    if (hydrating.has(session)) return Promise.resolve()
-    hydrating.add(session)
+    if (priming.has(session)) return Promise.resolve()
+    priming.add(session)
     return (async () => {
       try {
         const cwd = cwdOf(session)
@@ -640,18 +681,10 @@ export function apply(ctx, rawConfig, deps = {}) {
         const plan = result.plan
         if (!planUsable(plan)) return
         syncCommands(plan)
-        const message = await injectInstructions({ session }, plan)
-        if (message === null) return
-        try {
-          // The first user message must declare how it enters the surface.
-          session.append('user/message', message, { surfaceOp: 'append' })
-        } catch (error) {
-          warn('vibestack: cannot append the early roster: %o', error)
-        }
       } catch (error) {
-        warn('vibestack: cannot publish the early roster: %o', error)
+        warn('vibestack: cannot prime the preset: %o', error)
       } finally {
-        hydrating.delete(session)
+        priming.delete(session)
       }
     })()
   }
@@ -685,20 +718,20 @@ export function apply(ctx, rawConfig, deps = {}) {
     if (preset !== PRESET_ID) return undefined
     const session = sessionFrom(sessionId)
     if (session === null) return undefined
-    return hydrate(session)
+    return prime(session)
   }
 
   ctx.on('agent-preset/selected', onPresetSelected)
   ctx.on('session/event', (session, event) => {
     if (!config.agents || event?.type !== 'agent-preset/selected') return undefined
     if (event.data?.agentPreset !== PRESET_ID) return undefined
-    return hydrate(session)
+    return prime(session)
   })
   ctx.on('agent/created', (payload) => {
     if (!config.agents) return undefined
     const session = sessionFrom(payload?.agent)
     if (session === null) return undefined
-    void hydrate(session)
+    void prime(session)
     return undefined
   })
 

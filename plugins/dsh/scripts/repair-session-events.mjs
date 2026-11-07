@@ -1,14 +1,23 @@
 /**
- * Repair sessions written by VibeStack plugin ≤ 0.1.0.
+ * Repair sessions written by VibeStack plugin ≤ 0.4.0.
  *
- * Those releases appended plugin-private session events (`vibestack/agents`,
- * `vibestack/select`). DSH's stored-log reader only accepts an unknown event
- * type when its envelope carries `ignorable: true`, and a live `Session.append()`
- * cannot set that marker, so such a session fails to open with
- * "contains event type ... unknown to this harness and not marked ignorable".
+ * Two defects are repaired:
  *
- * This script adds that marker in place. Sequence numbers stay contiguous and
- * every other record is byte-identical; only the envelope gains one field.
+ * 1. Releases ≤ 0.1.0 appended plugin-private session events (`vibestack/agents`,
+ *    `vibestack/select`). DSH's stored-log reader only accepts an unknown event
+ *    type when its envelope carries `ignorable: true`, and a live
+ *    `Session.append()` cannot set that marker, so such a session fails to open
+ *    with "contains event type ... unknown to this harness and not marked
+ *    ignorable".
+ * 2. Releases ≤ 0.4.0 also appended the instructions message as soon as the mode
+ *    was selected. On a blank session that `user/message` became the first
+ *    surface event, but DSH requires the first `system/message` to be the
+ *    protected surface head, so reopening failed with "system/message requires
+ *    a protected first surface head". That early message is redundant (the first
+ *    pre-step publishes the same instructions after the system head), so the
+ *    repair keeps its data as an `ignorable` `vibestack/roster` log record and
+ *    removes it from the surface. Sequence numbers and every other record stay
+ *    unchanged.
  *
  * The physical layout matters: DSH stores one independent Zstandard frame that
  * contains exactly the header line, followed by one frame per append batch. The
@@ -44,6 +53,10 @@ import zlib from 'node:zlib'
 const ZSTD_MAGIC = 0xfd2fb528
 /** Event types this plugin used to write. */
 export const LEGACY_TYPES = Object.freeze(['vibestack/agents', 'vibestack/select'])
+/** Log-only record produced from a pre-head early-roster message. */
+export const REPAIRED_ROSTER_TYPE = 'vibestack/roster'
+/** Event types that occupy the model-visible surface. */
+const SURFACE_TYPES = new Set(['system/message', 'developer/message', 'user/message', 'assistant/message', 'tool/result'])
 /** Checksummed frames, matching what the harness writes. */
 const ZSTD_OPTIONS = Object.freeze({ params: { [zlib.constants.ZSTD_c_checksumFlag]: 1 } })
 
@@ -171,6 +184,36 @@ function repairLine(line) {
 }
 
 /**
+ * Turn one pre-head early-roster message into a log-only record.
+ *
+ * It keeps the original data (including `source.roster`) so the plugin can still
+ * project the Agent menu, but it is no longer a surface event.
+ * @param {Record<string, unknown>} event - surface event preceding the first system/message.
+ * @returns {Record<string, unknown>} converted event.
+ */
+function convertPreHeadEvent(event) {
+  const data = event.data
+  const source = data && typeof data === 'object' && !Array.isArray(data) ? data.source : undefined
+  const roster = source && typeof source === 'object' ? source.roster : undefined
+  if (
+    event.type !== 'user/message' ||
+    !roster ||
+    typeof roster !== 'object' ||
+    Array.isArray(roster) ||
+    source.kind !== 'vibestack'
+  ) {
+    throw new Error(
+      `surface event "${String(event.type)}" at seq ${String(event.seq)} precedes the first system/message and is not a VibeStack roster; refusing to rewrite it`,
+    )
+  }
+  if (event.sourceEventSeqs !== undefined) {
+    throw new Error(`pre-head surface event at seq ${String(event.seq)} carries sourceEventSeqs; refusing to rewrite it`)
+  }
+  const { surfaceOp, ...rest } = event
+  return { ...rest, type: REPAIRED_ROSTER_TYPE, ignorable: true }
+}
+
+/**
  * Repair one artifact in memory.
  * @param {Buffer} buffer - original artifact bytes.
  * @returns {{buffer: Buffer, changed: number} | null} null when the log needs no repair.
@@ -179,17 +222,41 @@ export function repairLog(buffer) {
   const text = decodeLog(buffer)
   const lines = text.slice(0, -1).split('\n')
   if (lines.length === 0) throw new Error('session log has no header line')
+  const header = lines[0]
+  const rawEvents = lines.slice(1)
+  const parsed = rawEvents.map((line) => {
+    if (!line.startsWith('{')) return null
+    try {
+      return JSON.parse(line)
+    } catch {
+      throw new Error('cannot parse an event record; refusing to rewrite a corrupt log')
+    }
+  })
+  const firstSystem = parsed.findIndex(
+    (event) => event !== null && typeof event === 'object' && event.type === 'system/message',
+  )
   let changed = 0
-  const events = lines.slice(1).map((line) => {
-    const result = repairLine(line)
-    if (result.changed) changed += 1
-    return result.line
+  const events = rawEvents.map((line, index) => {
+    const event = parsed[index]
+    if (event === null || typeof event !== 'object') return line
+    if (LEGACY_TYPES.includes(event.type)) {
+      const result = repairLine(line)
+      if (result.changed) changed += 1
+      return result.line
+    }
+    // Any surface event before the first system/message makes the log fail its
+    // protected-head invariant. The only writer here was the early VibeStack
+    // roster message; preserve its payload as a log-only record.
+    if (firstSystem !== -1 && index < firstSystem && SURFACE_TYPES.has(event.type)) {
+      changed += 1
+      return JSON.stringify(convertPreHeadEvent(event))
+    }
+    return line
   })
   if (changed === 0) return null
-  const header = lines[0]
   const encoded = encodeLog(header, events)
   // Re-read the bytes we are about to publish and require every record to be
-  // unchanged except for the inserted marker.
+  // exactly what the repair intended.
   const checkText = decodeLog(encoded)
   const checkLines = checkText.slice(0, -1).split('\n')
   if (checkLines[0] !== header) throw new Error('repair changed the header line')
@@ -328,12 +395,12 @@ export function main(argv) {
     try {
       const result = repairFile(file, { write })
       if (result.changed === 0) {
-        console.log(`${label}: no legacy events`)
+        console.log(`${label}: no repairable records`)
         continue
       }
       repairedFiles += 1
       repairedEvents += result.changed
-      console.log(`${label}: ${result.changed} event(s) need the ignorable marker`)
+      console.log(`${label}: ${result.changed} record(s) need repair`)
       if (result.applied) console.log(`${label}: repaired (backup: ${path.basename(file)}.bak)`)
     } catch (error) {
       failures += 1

@@ -7,7 +7,8 @@ import path from 'node:path'
 import { test } from 'node:test'
 import zlib from 'node:zlib'
 
-import { LEGACY_TYPES, decodeLog, encodeLog, repairFile, repairLog, scanZstdFrames } from '../scripts/repair-session-events.mjs'
+import { REPAIRED_ROSTER_TYPE as PLUGIN_ROSTER_TYPE } from '../lib/agents.js'
+import { LEGACY_TYPES, REPAIRED_ROSTER_TYPE, decodeLog, encodeLog, repairFile, repairLog, scanZstdFrames } from '../scripts/repair-session-events.mjs'
 
 const HEADER = {
   type: 'session',
@@ -146,4 +147,87 @@ test('encodeLog round-trips a header-only artifact', () => {
   const buffer = encodeLog(JSON.stringify(HEADER), [])
   assert.deepEqual(scanZstdFrames(buffer).frames.length, 1)
   assert.equal(decodeLog(buffer), `${JSON.stringify(HEADER)}\n`)
+})
+
+const ROSTER = {
+  version: 1,
+  key: 'roster-key',
+  agents: [{ name: 'Athena', description: 'planner', mode: 'all', group: 'core', model: '' }],
+  project: 'D:\\workspace\\VibeStack',
+  defaultSelected: 'Athena',
+}
+
+/** One early-roster `user/message` before the first `system/message`. */
+const PRE_HEAD_EVENTS = [
+  { type: 'agent-preset/selected', seq: 0, time: 2, data: { agentPreset: 'vibestack' } },
+  {
+    type: 'user/message',
+    seq: 1,
+    time: 3,
+    surfaceOp: 'append',
+    data: {
+      role: 'user',
+      content: [{ type: 'text', text: '<system-reminder>rules</system-reminder>' }],
+      source: { kind: 'vibestack', form: 'instructions', digest: 'digest', roster: ROSTER },
+    },
+  },
+  { type: 'turn/start', seq: 2, time: 4, data: { turn: 1 } },
+  { type: 'step/start', seq: 3, time: 5, data: { turn: 1, step: 1 } },
+  {
+    type: 'system/message',
+    seq: 4,
+    time: 6,
+    surfaceOp: 'append',
+    data: { turn: 1, step: 1, message: { role: 'system', content: [{ type: 'text', text: 'system prompt' }] } },
+  },
+  {
+    type: 'user/message',
+    seq: 5,
+    time: 7,
+    surfaceOp: 'append',
+    data: { role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' } },
+  },
+]
+
+test('the repair record type is the one the projection reads', () => {
+  assert.equal(REPAIRED_ROSTER_TYPE, PLUGIN_ROSTER_TYPE)
+})
+
+test('turns a pre-head early-roster message into a log-only record', () => {
+  const original = buildLog(PRE_HEAD_EVENTS)
+  const result = repairLog(original)
+  assert.ok(result)
+  assert.equal(result.changed, 1)
+
+  const lines = decodeLog(result.buffer).slice(0, -1).split('\n')
+  assert.equal(lines.length, 1 + PRE_HEAD_EVENTS.length)
+  assert.equal(lines[0], JSON.stringify(HEADER))
+
+  // Every other record is byte-identical.
+  for (const [index, event] of PRE_HEAD_EVENTS.entries()) {
+    if (index === 1) continue
+    assert.equal(lines[index + 1], JSON.stringify(event))
+  }
+
+  const converted = JSON.parse(lines[2])
+  assert.equal(converted.type, REPAIRED_ROSTER_TYPE)
+  assert.equal(converted.ignorable, true)
+  assert.equal(converted.seq, 1)
+  assert.equal(converted.surfaceOp, undefined)
+  assert.deepEqual(converted.data, PRE_HEAD_EVENTS[1].data)
+  assert.equal(repairLog(result.buffer), null)
+})
+
+test('refuses to rewrite a pre-head surface event that is not a VibeStack roster', () => {
+  const events = PRE_HEAD_EVENTS.map((event) => (
+    event.seq === 1
+      ? { ...event, data: { ...event.data, source: { kind: 'user' } } }
+      : event
+  ))
+  assert.throws(() => repairLog(buildLog(events)), /not a VibeStack roster/)
+})
+
+test('leaves a pre-head surface event alone when there is no system/message', () => {
+  const events = PRE_HEAD_EVENTS.filter((event) => event.type !== 'system/message')
+  assert.equal(repairLog(buildLog(events)), null)
 })

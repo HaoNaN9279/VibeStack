@@ -56,14 +56,23 @@ test('the core row provides ctx.vibestack and registers the models route', async
     assert.ok(service)
     assert.equal(service.apiVersion, 2)
     assert.equal(service.modelSelector, 'replace')
-    assert.equal(routes.length, 1)
-    assert.equal(routes[0].path, '/api/vibestack/models')
-    const response = await routes[0].fetch(new Request('http://localhost/api/vibestack/models'))
+    assert.deepEqual(routes.map((route) => route.path).sort(), [
+      '/api/vibestack/models',
+      '/api/vibestack/roster',
+    ])
+    const models = routes.find((route) => route.path === '/api/vibestack/models')
+    const response = await models.fetch(new Request('http://localhost/api/vibestack/models'))
     const payload = await response.json()
     assert.equal(payload.ok, true)
     assert.deepEqual(payload.layers.map((layer) => layer.id), ['strong', 'flash'])
     assert.equal(payload.default, 'strong')
     assert.equal(payload.selector, 'replace')
+
+    const roster = routes.find((route) => route.path === '/api/vibestack/roster')
+    const missing = await roster.fetch(new Request('http://localhost/api/vibestack/roster'))
+    assert.equal(missing.status, 400)
+    const unknown = await roster.fetch(new Request('http://localhost/api/vibestack/roster?sessionId=missing'))
+    assert.deepEqual(await unknown.json(), { ok: true, roster: null })
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

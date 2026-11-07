@@ -53,11 +53,13 @@ dsh plugin --profile desktop remove dsh-vibestack
 ## 使用
 
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
-2. 选中模式后，插件立刻用 `vibe-stack resolve --mode vibestack` 解析当前会话目录，
-   并把名册消息提前 append 到空白会话，因此左下角 Agent 菜单无需等第一条消息。
-   首个 `agent/pre-step` 再刷新一次（按 digest/roster key 去重）：Core 始终参与，
-   领域能力组按该目录的 `.vibestack/stack.json` 并集参与。规则、Agent 名册、技能、
-   命令与 MCP 一起装进本会话；名册写在注入消息的 `source` 里，不显示为用户消息。
+2. 选中模式后，插件立刻用 `vibe-stack resolve --mode vibestack` 解析当前会话目录并
+   注册命令；左下角 Agent 菜单的名册由根级只读路由
+   `GET /api/vibestack/roster?sessionId=...` 提供，因此无需等第一条消息，也不写入
+   会话日志。首个 `agent/pre-step` 再把规则与名册作为注入消息发布（按 digest/roster
+   key 去重）：Core 始终参与，领域能力组按该目录的 `.vibestack/stack.json` 并集参与。
+   规则、Agent 名册、技能、命令与 MCP 一起装进本会话；名册写在注入消息的 `source`
+   里，不显示为用户消息。
 3. 输入框左下的 **Agent** 菜单（`◆` 按钮）切换本会话人设：列出 **Core 的 Agent +
    当前工作区依赖的能力组的可选 Agent**（`mode` 为 `primary` / `all`；`subagent`-only
    留在名册中，不进入该菜单），并标注来源组。
@@ -159,6 +161,13 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 - 人设选择由 `/vibestack-agent` 的 `command/run` 事件承载，重启后仍然有效；
 - 投影 `vibestack` 只折叠这两类已知事件，`stateVersion` 变更时旧检查点自动失效。
 
+**不要在任何 surface 事件之前写入**：DSH 的存储格式要求第一条
+`system/message` 是受保护的 surface 头。在它之前 append 任何 surface 事件（包括
+`user/message`）的会话，重启后会报
+`system/message requires a protected first surface head`。因此名册只在
+`agent/pre-step`（此时系统提示已写入）发布；空白会话的 Agent 菜单由根级只读路由
+`/api/vibestack/roster` 提供，不触碰日志。
+
 插件的 `agents` 能力基于规则注入：`rules: false` 或项目没有规则文件时，Agent 菜单不会出现
 （人设段落仍按 `defaultAgent` 生效）。
 
@@ -235,7 +244,7 @@ plugins/dsh/
 ├── cordis.patch.yml     # 只 insert：根级 core/UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（core / preset 两种角色）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 模型层
+├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 模型层 / 名册路由
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
@@ -266,8 +275,11 @@ Core + 工作区并集名册随消息 `source` 发布 → 命名空间命令注�
 ### 旧会话修复
 
 0.1.x 写入了 `vibestack/agents` / `vibestack/select` 事件，携带这些事件的会话在 DSH 重启后
-会报 `contains event type ... unknown to this harness and not marked ignorable`。修复脚本给
-这些记录补上 `ignorable: true`（序号不变，其余记录不动），先干跑只报告：
+会报 `contains event type ... unknown to this harness and not marked ignorable`。0.4.0
+还会在空白会话里提前 append 名册消息，使 `user/message` 抢在第一条 `system/message`
+之前，重启后报 `system/message requires a protected first surface head`。修复脚本处理
+这两种记录：前者补 `ignorable: true`，后者保留原数据和序号、改写成带 `ignorable` 的
+`vibestack/roster` 日志记录（不再进入 surface；投影仍能读出名册）。先干跑只报告：
 
 ```bash
 node scripts/repair-session-events.mjs                                    # 默认扫描 ~/.dsh/sessions，干跑
@@ -281,9 +293,8 @@ DSH 的物理格式要求**第一个 Zstandard 帧只包含 header 行**，后�
 文件保留为 `session.v4.jsonl.zstd.bak`。旧脚本（0.2.0 之前）会把整个日志压成一帧，已在
 本版本修正。
 
-安装新插件并重启**不会**改写已有日志：新代码只保证不再写入自定义事件，历史修复仍需
-跑一次脚本。修复前请退出桌面版；修复后重新打开会话，投影会自动从旧事件重建（旧
-`vibestack/agents` 事件按未知可忽略事件保留，不再参与投影）。
+修复后，下一次 `agent/pre-step` 会重新发布规则与名册；修复记录本身只用于让 Agent 菜单
+在第一条消息前仍有数据。修复前请退出桌面版；脚本检测到文件在运行中被改动会拒绝写入。
 
 安装后检查：
 
@@ -311,9 +322,10 @@ dsh --profile <profile> --dump-config | grep -i -A2 vibestack
 - MCP 未出现：macOS/Windows 桌面版需要 `@deepseek-ai/dsh-mcp-client` 可被运行时解析；
   解析不到时插件只记一条告警并跳过，其它能力不受影响。
 - Agent 菜单不出现：确认会话模式是 VibeStack，且规则注入未被 `rules: false` 关掉；
-  Core 始终自带 `Athena`、`Hermes`，所以正常情况下菜单总会出现。新会话要等第一轮
-  注入之后才出现菜单。
+  Core 始终自带 `Athena`、`Hermes`，所以正常情况下菜单总会出现。空白会话由根级只读
+  路由提供名册；若 core 行缺失或路由不可用，则要等首轮 `agent/pre-step` 注入后才出现。
 - 命令不存在：能力组命令在首个 `agent/pre-step` 之后才注册；领域组命令还要求当前
   会话目录激活了该组。Core 命令（`vibestack-core-*`）在任何 VibeStack 会话都可用。
-- 历史加载失败并提示 `event type "vibestack/..." ... not marked ignorable`：会话由
-  0.1.x 写入，用上面的修复脚本补标记。
+- 历史加载失败并提示 `event type "vibestack/..." ... not marked ignorable`，或
+  `system/message requires a protected first surface head`：会话由旧版本写入，用上面的
+  修复脚本处理。

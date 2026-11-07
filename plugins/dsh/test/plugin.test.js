@@ -466,7 +466,7 @@ test('a repeat step reuses the resolve result', async () => {
   assert.equal(calls, 1)
 })
 
-test('the plugin registers the step and early-roster listeners', () => {
+test('the plugin registers the step and preset-binding listeners', () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
   assert.deepEqual(
@@ -475,7 +475,7 @@ test('the plugin registers the step and early-roster listeners', () => {
   )
 })
 
-test('the roster is appended as soon as the preset is selected', async () => {
+test('binding the preset writes nothing to the session log', async () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
   const handler = harness.handlers.get('session/event')
@@ -483,14 +483,10 @@ test('the roster is appended as soon as the preset is selected', async () => {
     type: 'agent-preset/selected',
     data: { agentPreset: 'vibestack' },
   })
-  const appended = harness.session.events.find((event) => event.type === 'user/message')
-  assert.ok(appended)
-  assert.equal(appended.data.source.kind, 'vibestack')
-  assert.ok(appended.data.source.roster)
-  assert.deepEqual(
-    appended.data.source.roster.agents.map((agent) => agent.name),
-    ['Athena', 'Hermes', 'Oracle', 'Researcher'],
-  )
+  // A surface event before the harness writes its first system/message makes
+  // the stored log unreadable after a restart.
+  assert.deepEqual(harness.session.events, [])
+  assert.ok(harness.services.commands.definitions.some((definition) => definition.name === SELECT_COMMAND))
 })
 
 /**
@@ -586,6 +582,6 @@ test('the layer command lists and applies configured layers', async () => {
   assert.equal(harness.services.sessionController.calls.at(-1).model, 'm-fast')
 })
 
-test('the projection version was bumped for the group field', () => {
-  assert.equal(PROJECTION_VERSION, 3)
+test('the projection version was bumped for the repaired roster and early selection', () => {
+  assert.equal(PROJECTION_VERSION, 4)
 })

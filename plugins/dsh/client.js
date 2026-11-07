@@ -179,6 +179,23 @@ window.__ModuleLoader__.load({
 
     /** Exact Fetch route owned by the host core row. */
     const LAYERS_PATH = "/api/vibestack/models";
+    /** Read-only roster route used before the first pre-step publishes one. */
+    const ROSTER_PATH = "/api/vibestack/roster";
+
+    /**
+     * Read the roster for a session that has not published one yet.
+     * @param {string} sessionId - session id from the slot.
+     * @returns {Promise<object | null>} roster payload or null.
+     */
+    async function readRoster(sessionId) {
+      const response = await fetch(
+        ROSTER_PATH + "?sessionId=" + encodeURIComponent(sessionId),
+        { credentials: "same-origin", cache: "no-store" }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) return null;
+      return payload.roster ?? null;
+    }
 
     /**
      * Read the model-layer document from the host route.
@@ -904,6 +921,7 @@ window.__ModuleLoader__.load({
     function AgentPicker(props) {
       const state = props.useProjection("vibestack");
       const preset = props.useProjection("agentPreset");
+      const [fallback, setFallback] = react.useState(null);
       const [open, setOpen] = react.useState(false);
       const [busy, setBusy] = react.useState(false);
       const [active, setActive] = react.useState(0);
@@ -913,19 +931,51 @@ window.__ModuleLoader__.load({
       const menuRef = react.useRef(null);
       const idRef = react.useRef(null);
       const restoreFocus = react.useRef(false);
+      const sessionId = typeof props.sessionId === "string" ? props.sessionId : "";
 
       if (idRef.current === null) {
         pickerSeq += 1;
         idRef.current = "vibestack-agent-menu-" + pickerSeq;
       }
 
-      const roster = state && Array.isArray(state.agents) ? state.agents : [];
+      const projectionRoster = state && Array.isArray(state.agents) ? state.agents : [];
+
+      // A blank session has no stored roster yet: the on-disk format forbids
+      // any surface event before the first system/message, so the host serves
+      // the pre-turn roster through a read-only route instead.
+      react.useEffect(() => {
+        if (preset !== "vibestack" || sessionId.length === 0 || projectionRoster.length > 0) {
+          setFallback(null);
+          return undefined;
+        }
+        let cancelled = false;
+        readRoster(sessionId)
+          .then((next) => {
+            if (!cancelled) setFallback(next);
+          })
+          .catch(() => {
+            if (!cancelled) setFallback(null);
+          });
+        return () => {
+          cancelled = true;
+        };
+      }, [preset, sessionId, projectionRoster.length]);
+
+      const roster = projectionRoster.length > 0
+        ? projectionRoster
+        : fallback && Array.isArray(fallback.agents)
+          ? fallback.agents
+          : [];
       // subagent-only definitions stay in the roster but not in the persona menu.
       const agents = roster.filter((agent) => agent && agent.mode !== "subagent");
+      const canonical = (name) => {
+        if (typeof name !== "string" || name.length === 0) return null;
+        const found = agents.find((agent) => agent.name.toLowerCase() === name.toLowerCase());
+        return found === undefined ? null : found.name;
+      };
       const selected =
-        state && typeof state.selected === "string" && agents.some((agent) => agent.name === state.selected)
-          ? state.selected
-          : null;
+        canonical(state && state.selected) ??
+        canonical(fallback && fallback.defaultSelected);
       const visible = preset === "vibestack" && agents.length > 0;
 
       const measure = react.useCallback(() => {
@@ -1161,6 +1211,7 @@ window.__ModuleLoader__.load({
             id: "vibestack-agent",
             order: 5,
             inject: (sessionId) => ({
+              sessionId,
               onSelect: async (name) => {
                 const result = await ctx.remote.commands.execute(
                   sessionId,

@@ -780,12 +780,14 @@ capability-groups/domain/group-forge/0.1.0/
 - 菜单每行显示 `Agent 名 + 来源组`；选择通过 `/vibestack-agent <name>` 写入
   `command/run`，投影跨重启保留。
 - 同名 Agent 按加载顺序后加载覆盖；被覆盖的行只显示最终来源组。
-- 名册随注入消息的 `source.roster` 发布；`roster` 增量包含 `group`，projection 版本升到 3。
-  切换人设不会重新注入规则。
-- 模式选中时立即 `hydrate`：解析工作区、注册命令，并把同一条注入消息以
-  `surfaceOp: 'append'` 追加到空白会话，使 Agent 菜单在第一条消息前出现；
-  首个 `agent/pre-step` 按 digest/roster key 去重。旧 CLI 不支持 `--mode` 时解析失败，
-  需 `uv tool install --force` 升级到 0.5.0+。
+- 名册随注入消息的 `source.roster` 发布；`roster` 增量包含 `group`，projection 版本升到 4
+  （新增修复记录与首条名册前的选择）。切换人设不会重新注入规则。
+- 模式选中时立即 `prime`：解析工作区并注册命令，但**不写会话日志**。DSH 的存储格式要求
+  第一条 `system/message` 是受保护的 surface 头；在它之前追加任何 surface 事件都会让
+  会话重启后报 `system/message requires a protected first surface head`。空白会话的
+  Agent 菜单由根级只读路由 `GET /api/vibestack/roster?sessionId=...` 提供，首个
+  `agent/pre-step` 再把同一条注入消息发布到 surface（按 digest/roster key 去重）。旧 CLI
+  不支持 `--mode` 时解析失败，需 `uv tool install --force` 升级到 0.5.0+。
 
 ### 18.3 命令列表
 

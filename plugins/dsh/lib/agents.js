@@ -9,8 +9,13 @@
  *
  * - `user/message`: the plugin's instructions message carries the roster in its
  *   `source` field, which never reaches the model;
+ * - `vibestack/roster`: a repaired early-roster record. Releases ≤ 0.4.0
+ *   appended that message before the harness wrote its first `system/message`,
+ *   which the on-disk format rejects, so the repair script turns it into an
+ *   `ignorable` log-only record and the projection still reads its roster;
  * - `command/run`: `/vibestack-agent <name>` is logged by the command executor
- *   before the handler runs, so the selection survives restarts.
+ *   before the handler runs, so the selection survives restarts. A selection
+ *   made before the first roster is remembered and settled by that roster.
  *
  * The client reads the projection through `useProjection('vibestack')`.
  */
@@ -20,11 +25,13 @@ import { createHash } from 'node:crypto'
 /** Projection key readable from the client as `useProjection('vibestack')`. */
 export const PROJECTION_KEY = 'vibestack'
 /** Projection layout version; bump when fields or fold semantics change. */
-export const PROJECTION_VERSION = 3
+export const PROJECTION_VERSION = 4
 /** Command that selects the session persona. */
 export const SELECT_COMMAND = 'vibestack-agent'
 /** `source.kind` of every message this plugin injects. */
 export const SOURCE_KIND = 'vibestack'
+/** Log-only record produced by the repair script for an early-roster message. */
+export const REPAIRED_ROSTER_TYPE = 'vibestack/roster'
 
 /** Message-source kinds that carry a roster. */
 const ROSTER_VERSION = 1
@@ -162,11 +169,16 @@ export function createRoster(list, defaultSelected, project) {
 
 /**
  * Read a roster out of one stored event.
- * @param {{type?: string, data?: unknown}} event - session event.
+ * @param {{type?: string, data?: unknown, ignorable?: boolean}} event - session event.
  * @returns {{agents: object[], project: string, defaultSelected: string | null} | null} roster, or null when the event carries none.
  */
 export function rosterFromEvent(event) {
-  if (event?.type !== 'user/message') return null
+  // A live publication is a `user/message`; a repaired early publication is the
+  // plugin-owned log-only record, which is readable only when DSH was told it
+  // may be skipped.
+  const live = event?.type === 'user/message'
+  const repaired = event?.type === REPAIRED_ROSTER_TYPE && event?.ignorable === true
+  if (!live && !repaired) return null
   const data = event.data
   if (!data || typeof data !== 'object') return null
   const source = data.source
@@ -201,9 +213,13 @@ export function rosterFromEvent(event) {
  * @returns {string | null} effective selection.
  */
 function settleSelection(current, roster) {
-  const names = new Set(roster.agents.map((agent) => agent.name))
-  if (typeof current === 'string' && names.has(current)) return current
-  if (typeof roster.defaultSelected === 'string' && names.has(roster.defaultSelected)) return roster.defaultSelected
+  if (typeof current === 'string') {
+    const found = roster.agents.find((agent) => agent.name.toLowerCase() === current.toLowerCase())
+    if (found !== undefined) return found.name
+  }
+  if (typeof roster.defaultSelected === 'string' && roster.agents.some((agent) => agent.name === roster.defaultSelected)) {
+    return roster.defaultSelected
+  }
   return null
 }
 
@@ -238,13 +254,22 @@ export function createProjectionDefinition() {
         const data = event.data
         if (!data || typeof data !== 'object') return state
         if (typeof data.name !== 'string' || !SELECT_NAMES.has(data.name)) return state
-        const args = typeof data.args === 'string' ? data.args.trim().toLowerCase() : ''
+        const rawArgs = typeof data.args === 'string' ? data.args.trim() : ''
+        const args = rawArgs.toLowerCase()
         if (args.length === 0 || args === 'list') return state
         const match = state.agents.find(
           (agent) => agent.mode !== 'subagent' && agent.name.toLowerCase() === args,
         )
-        if (match === undefined || state.selected === match.name) return state
-        return { ...state, selected: match.name }
+        if (match !== undefined) {
+          if (state.selected === match.name) return state
+          return { ...state, selected: match.name }
+        }
+        // Before the first roster lands there is nothing to validate against.
+        // Remember the request; the next roster keeps it when it still exists.
+        if (state.agents.length === 0 && state.selected !== rawArgs) {
+          return { ...state, selected: rawArgs }
+        }
+        return state
       }
       return state
     },
