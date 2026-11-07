@@ -162,6 +162,15 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 在 profile 的 `cordis.patch.yml` 里按行 id 覆盖（`config` 是整体替换，需写全字段）：
 
 ```yaml
+# 根级服务：模型层与设置路由
+- id: vibestack-core
+  name: dsh-vibestack
+  config:
+    role: core
+    modelsFile: ''
+    modelSelector: additive     # 或 replace
+
+# 会话模式
 - id: vibestack
   name: dsh-vibestack
   config:
@@ -172,8 +181,6 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
     namePrefix: vibestack
     maxCommandNameLength: 48
     skillRank: 250
-    modelsFile: ''
-    modelSelector: additive
     applyModelOnAgent: true
     applyModelOnCommand: true
     applyModelOnSkill: true
@@ -191,8 +198,8 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 |---|---|---|
 | `role` | `preset` | `core`：根级服务/设置路由；`preset`：会话模式；`ui`：纯客户端行 |
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
-| `modelsFile` | `''` | 层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `additive` | `additive`：左下角增量层控件；`replace`：遮蔽原生模型位，非 VibeStack 会话回退原生目录 |
+| `modelsFile` | `''` | **core 行**：层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
+| `modelSelector` | `additive` | **core 行**：`additive` 左下角增量层控件；`replace` 遮蔽原生模型位，非 VibeStack 会话回退原生目录 |
 | `applyModelOnAgent` | `true` | 切换人设时应用其 `model` 层 |
 | `applyModelOnCommand` | `true` | 执行能力组命令时应用其 `model` 层 |
 | `applyModelOnSkill` | `true` | 用户 `/vibestack-...` 调技能时应用其 `model` 层 |

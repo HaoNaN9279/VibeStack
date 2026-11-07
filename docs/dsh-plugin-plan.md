@@ -478,8 +478,8 @@ ctx.vibestack = {
 | `maxCommandNameLength` | `48` | **已实现**：超长截断 + hash |
 | `skillRank` | `250` | **已实现**：skill 候选 rank |
 | `role` | `'preset'` | **已实现**：`core` / `preset` / `ui` |
-| `modelsFile` | `''` | **已实现**：层定义文件；空则用全局配置 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `'additive'` | **已实现**：`additive` 左侧 `◈` 控件；`replace` 遮蔽原生模型位（非 VibeStack 会话回退原生目录） |
+| `modelsFile` | `''` | **core 行**：层定义文件；空则用全局配置 `~/.config/vibestack/config.json` 的 `models` 段 |
+| `modelSelector` | `'additive'` | **core 行**：`additive` 左侧 `◈` 控件；`replace` 遮蔽原生模型位（非 VibeStack 会话回退原生目录） |
 | `applyModelOnCommand` | `true` | **已实现**：命令声明 `model` 时切换会话模型 |
 | `applyModelOnAgent` | `true` | **已实现**：切换人设时应用其层 |
 | `applyModelOnSkill` | `true` | **已实现**：用户 `/skill` 调用时应用其层（同回合尽力而为） |
