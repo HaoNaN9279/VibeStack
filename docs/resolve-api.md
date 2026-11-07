@@ -1,4 +1,4 @@
-# Resolve API v1
+# Resolve API v2
 
 `vibe-stack resolve --json` 是能力组解析的唯一边界。插件调用它获取注入计划，
 不在插件内扫描目录、选择版本或解析 frontmatter。
@@ -6,14 +6,16 @@
 ## 调用
 
 ```bash
-vibe-stack resolve --json --project <project-dir>
+vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
 ```
 
 - `--repo` 可选，默认按全局配置和环境变量定位仓库。
 - `--json` 输出机器可读 JSON；省略时输出摘要。
+- `--mode` 默认 `project`：
+  - `project`：历史行为；无 `.vibestack/stack.json` 时返回 `active=false`，不加载 Core。
+  - `vibestack`：**Core 始终加载**；无 stack 时也返回 `active=true`，只含 Core。
 - `stdout` 只包含 JSON，UTF-8 编码。
 - 命令只读，不创建或修改 `.vibestack/lock.json`。
-- 无 `.vibestack/stack.json` 时返回 `active=false`，不加载 Core。
 - 非致命内容问题写入 `warnings`，退出码仍为 `0`。
 - 仓库缺失、stack JSON 损坏等致命错误写 `stderr`，退出码为 `1`。
 
@@ -21,8 +23,9 @@ vibe-stack resolve --json --project <project-dir>
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "active": true,
+  "mode": "vibestack",
   "repository": "D:/workspace/work/VibeStack",
   "project": "D:/workspace/project",
   "core": {
@@ -71,9 +74,10 @@ vibe-stack resolve --json --project <project-dir>
 
 | 字段 | 说明 |
 |---|---|
-| `schema_version` | API 版本，当前为 `1` |
-| `active` | 是否存在项目 stack |
-| `core` | 已解析的 Core 摘要；无 stack 时为 `null` |
+| `schema_version` | API 版本，当前为 `2` |
+| `active` | 计划是否生效；`mode=vibestack` 时始终为 `true` |
+| `mode` | `project` 或 `vibestack`；v1 响应视为 `project` |
+| `core` | 已解析的 Core 摘要；`project` 模式无 stack 时为 `null` |
 | `groups` | 已解析的领域组摘要，按加载顺序 |
 | `rules` | 已校验规则路径，按加载顺序追加 |
 | `skills` | 已校验技能目录，按加载顺序追加 |
@@ -84,16 +88,21 @@ vibe-stack resolve --json --project <project-dir>
 | `fingerprint` | 解析输入内容的 SHA-256，用于诊断和未来缓存 |
 
 路径为绝对路径和正斜杠。`agents`、`commands` 的 key 是名称；正文分别放在
-`system`、`template`。`mcp` 已移除 `name` 字段。
+`system`、`template`。`mcp` 已移除 `name` 字段。`rules`、`skills`、`agents`、`commands`
+的每一项都带 `group`，它是“Core + 当前工作区并集”的来源标识；DSH 插件用它生成
+`vibestack-<group>-<name>` 命名空间，并区分 Core 常驻命令与领域组命令。
 
 ## 解析规则
 
 加载顺序：
 
-1. Core
+1. Core（`mode=vibestack` 时无条件；`project` 模式仅当 stack 存在）
 2. `stack.groups` 数组顺序
 3. 每个组的 `extends` 依赖优先
 4. 同名组只加载一次
+
+`mode=vibestack` 且项目无 stack 时，使用全局配置的 `core`（默认 `core@0.1.0`）合成一个
+空 groups 的 stack；`mode=project` 保持历史行为。
 
 内容校验：
 
@@ -115,6 +124,9 @@ vibe-stack resolve --json --project <project-dir>
 ## 兼容与失败策略
 
 - API 只做加法扩展；破坏性变更提升 `schema_version`。
+- v2 新增 `mode`；v1 响应按 `mode=project` 读取。
+- DSH 插件接受 `schema_version` ∈ {1, 2}。v1 没有 `mode`，插件按 `project` 处理，
+  因此不会获得“Core 常驻”语义；需要升级 CLI 后重新加载。
 - 插件必须校验 `schema_version`，不兼容时只加载默认技能。
 - 插件调用失败不得阻断 Agent 启动。
 - 插件建议设置超时（默认 5 秒），可通过 `VIBESTACK_RESOLVE_TIMEOUT_MS`

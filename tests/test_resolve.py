@@ -7,7 +7,7 @@ from pathlib import Path
 
 from vibe_stack.model import GroupRef, ProjectStack
 from vibe_stack.project import activate, init_stack, lock_path, read_stack, write_stack
-from vibe_stack.resolve import resolve_project
+from vibe_stack.resolve import MODE_VIBESTACK, resolve_project
 
 
 def _write(path: Path, text: str) -> None:
@@ -22,9 +22,47 @@ def _write_json(path: Path, data: dict) -> None:
 def test_resolve_inactive_without_stack(repo: Path, project: Path) -> None:
     plan = resolve_project(repo, project)
     assert plan.active is False
+    assert plan.mode == "project"
     assert plan.core is None
     assert plan.rules == []
     assert plan.agents == {}
+
+
+def test_vibestack_mode_loads_core_without_stack(
+    repo: Path, project: Path
+) -> None:
+    plan = resolve_project(repo, project, mode=MODE_VIBESTACK)
+    assert plan.active is True
+    assert plan.mode == "vibestack"
+    assert plan.core is not None
+    assert plan.core.name == "core"
+    assert [rule.name for rule in plan.rules] == ["global"]
+    assert plan.agents["Helper"].group == "core"
+    assert [skill.name for skill in plan.skills] == ["core-skill"]
+
+
+def test_vibestack_mode_falls_back_to_the_newest_core(
+    repo: Path, project: Path
+) -> None:
+    write_stack(project, ProjectStack(core=GroupRef("core", "9.9.9")))
+    plan = resolve_project(repo, project, mode=MODE_VIBESTACK)
+    assert plan.active is True
+    assert plan.core is not None
+    assert plan.core.version == "0.1.0"
+    assert any("unavailable" in warning for warning in plan.warnings)
+
+
+def test_vibestack_mode_unions_core_and_project_groups(
+    repo: Path, project: Path
+) -> None:
+    init_stack(project, GroupRef("core", "0.1.0"))
+    activate(project, GroupRef("data", ""), repo)
+    plan = resolve_project(repo, project, mode=MODE_VIBESTACK)
+    assert plan.active is True
+    assert plan.core is not None
+    assert [group.name for group in plan.groups] == ["base", "data"]
+    assert [rule.name for rule in plan.rules] == ["global", "base", "data"]
+    assert plan.agents["Helper"].group == "core"
 
 
 def test_resolve_core_groups_and_dependencies(repo: Path, project: Path) -> None:

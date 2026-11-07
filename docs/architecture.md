@@ -87,15 +87,16 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 
 `stack.json` 是唯一激活来源。`lock.json` 是 `sync` 生成的解析快照，供诊断和复现。
 
-无 `stack.json`：
+无 `stack.json` 时按 resolve 模式区分：
 
-- 不加载 Core
-- 不加载任何项目能力组
-- 插件仍加载自带的 `vibestack` 指引技能
+- `project` 模式（默认）：不加载 Core，不加载任何项目能力组，插件仍加载自带的
+  `vibestack` 指引技能。
+- `vibestack` 模式（DeepSeek Harness 的 VibeStack 会话）：**Core 无条件加载**，
+  领域能力组仍为空；插件把 Core 的规则、Agent、命令、技能与 MCP 注入会话。
 
 ## 5. 加载算法
 
-解析和注入由 `vibe-stack resolve --json` 完成，插件不重复实现：
+解析和注入由 `vibe-stack resolve --json [--mode project|vibestack]` 完成，插件不重复实现：
 
 ```text
 1. 读全局配置 ~/.config/vibestack/config.json 定位仓库
@@ -109,9 +110,13 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 9. 插件把注入计划映射到目标 Agent 配置
 ```
 
-`resolve` 严格只读，不写 `.vibestack/lock.json`。无 stack 时返回
-`active=false`，不加载 Core。缺失能力组或坏文件在 `resolve` 中产生告警并跳过；
-`sync` 保持严格校验，缺失组直接报错。
+`resolve` 严格只读，不写 `.vibestack/lock.json`。`project` 模式无 stack 时返回
+`active=false`，不加载 Core；`vibestack` 模式无 stack 时返回 `active=true`，只含 Core。
+缺失能力组或坏文件在 `resolve` 中产生告警并跳过；`sync` 保持严格校验，缺失组直接报错。
+
+DSH 适配器把能力组命令/技能映射为 `vibestack-<group>-<name>`，会话的 Agent / 命令 /
+技能列表始终是 Core + 当前工作区并集；子 Agent 会话沿用同一份计划。详见
+[`dsh-plugin-plan.md`](dsh-plugin-plan.md) 的 R7–R10。
 
 合并规则：
 

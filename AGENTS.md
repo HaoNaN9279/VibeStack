@@ -20,7 +20,7 @@ tests/                                     # pytest
 1. 能力组不包含 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
 2. MCP 是工具包的一种 `provider`，不单独放在能力组里。
 3. 项目部署只写 `.vibestack/`，不复制、不链接内容到 `.opencode/`。
-4. Core 只在项目存在 `.vibestack/stack.json` 时加载。
+4. Core 的加载规则按 resolve 模式区分：`project` 模式只在项目存在 `.vibestack/stack.json` 时加载；`vibestack` 模式（DSH VibeStack 会话）**无条件加载**，即使目录不是项目根。
 5. Domain 能力组只在 `.vibestack/stack.json` 的 `groups` 中列出时加载，不默认激活。
 6. 加载顺序：Core → `groups` 数组顺序 → `extends` 依赖优先。
 7. 同名 Agent / 命令 / MCP：后加载覆盖；规则和技能路径追加。
@@ -28,7 +28,8 @@ tests/                                     # pytest
 9. 已发布版本目录不可修改；升级新增版本目录，`guid` 不变。
 10. 工具统一通过 `vibe-stack tool ...` 调用，不写死绝对路径。
 11. 模型参数（model、temperature、permission）不进入能力组 Agent 定义。
-12. 插件通过 `vibe-stack resolve --json` 获取注入计划，不自行解析能力组目录、版本、`extends` 或 frontmatter。
+12. 插件通过 `vibe-stack resolve --json [--mode vibestack]` 获取注入计划，不自行解析能力组目录、版本、`extends` 或 frontmatter。
+13. DSH 能力组命令与技能统一为 `vibestack-<group>-<name>`；会话的 Agent / 命令 / 技能列表是 Core + 当前工作区并集，子 Agent 会话沿用同一规则。
 
 ## Python 规范
 
@@ -54,8 +55,12 @@ tests/                                     # pytest
 ```bash
 uv sync
 uv run pytest -q
-cd plugins/opencode && bun test
+node plugins/dsh/test/agents.test.js
+node plugins/dsh/test/plugin.test.js
+# 其余 DSH 测试文件逐个运行，见 plugins/dsh/README.md
 ```
+
+`plugins/opencode/` 仍保留时：`cd plugins/opencode && bun test`。
 
 ## 提交
 

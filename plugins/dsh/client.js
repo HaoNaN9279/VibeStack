@@ -120,6 +120,16 @@ window.__ModuleLoader__.load({
       },
       itemBody: { display: "flex", flexDirection: "column", gap: "1px", minWidth: 0, flex: "1 1 auto" },
       itemName: { fontWeight: 500, lineHeight: "18px" },
+      itemGroup: {
+        marginLeft: "6px",
+        fontSize: "10px",
+        fontWeight: 400,
+        lineHeight: "14px",
+        padding: "0 4px",
+        borderRadius: "4px",
+        color: "var(--dsw-alias-label-tertiary, inherit)",
+        background: "var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,0.14))"
+      },
       itemDesc: {
         fontSize: "11px",
         lineHeight: "15px",
@@ -190,8 +200,14 @@ window.__ModuleLoader__.load({
         idRef.current = "vibestack-agent-menu-" + pickerSeq;
       }
 
-      const agents = state && Array.isArray(state.agents) ? state.agents : [];
-      const selected = state && typeof state.selected === "string" ? state.selected : null;
+      const roster = state && Array.isArray(state.agents) ? state.agents : [];
+      // Subagent-only agents are published for subagent sessions but cannot be
+      // chosen as the session persona.
+      const agents = roster.filter((agent) => agent && agent.mode !== "subagent");
+      const selected =
+        state && typeof state.selected === "string" && agents.some((agent) => agent.name === state.selected)
+          ? state.selected
+          : null;
       const visible = preset === "vibestack" && agents.length > 0;
 
       const measure = react.useCallback(() => {
@@ -358,7 +374,7 @@ window.__ModuleLoader__.load({
                   "div",
                   { style: styles.menuHeader },
                   h("span", { style: styles.menuTitle }, "VibeStack · Agent"),
-                  h("span", { style: styles.menuHint }, "切换后只影响本会话人设")
+                  h("span", { style: styles.menuHint }, "Core + 当前工作区能力组的并集；切换只影响本会话人设")
                 ),
                 agents.map((agent, index) =>
                   h(
@@ -377,7 +393,12 @@ window.__ModuleLoader__.load({
                     h(
                       "span",
                       { style: styles.itemBody },
-                      h("span", { style: styles.itemName }, agent.name),
+                      h(
+                        "span",
+                        { style: styles.itemName },
+                        agent.name,
+                        agent.group ? h("span", { style: styles.itemGroup }, agent.group) : null
+                      ),
                       agent.description ? h("span", { style: styles.itemDesc }, agent.description) : null
                     )
                   )

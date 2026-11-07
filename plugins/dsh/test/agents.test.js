@@ -20,9 +20,9 @@ import {
 
 const PLAN = {
   agents: {
-    Athena: { description: 'planner', mode: 'all', system: '# Athena' },
-    Hermes: { description: 'worker', mode: 'primary', system: '# Hermes' },
-    helper: { description: 'child only', mode: 'subagent', system: '# helper' },
+    Athena: { description: 'planner', mode: 'all', system: '# Athena', group: 'core' },
+    Hermes: { description: 'worker', mode: 'primary', system: '# Hermes', group: 'core' },
+    helper: { description: 'child only', mode: 'subagent', system: '# helper', group: 'core' },
   },
 }
 
@@ -59,9 +59,10 @@ test('personaAgents excludes subagent-only agents', () => {
   assert.deepEqual(personaAgents(agentList(PLAN)).map((agent) => agent.name), ['Athena', 'Hermes'])
 })
 
-test('agentSummaries drops host-only fields', () => {
+test('agentSummaries drops host-only fields but keeps the source group', () => {
   const summaries = agentSummaries(agentList(PLAN))
-  assert.deepEqual(Object.keys(summaries[0]), ['name', 'description', 'mode'])
+  assert.deepEqual(Object.keys(summaries[0]), ['name', 'description', 'mode', 'group'])
+  assert.equal(summaries[0].group, 'core')
 })
 
 test('pickDefaultAgent prefers Athena, then the configured name', () => {
@@ -74,8 +75,9 @@ test('pickDefaultAgent prefers Athena, then the configured name', () => {
 })
 
 test('sameRoster compares published fields only', () => {
-  assert.equal(sameRoster([{ name: 'a', description: 'd', mode: 'all' }], [{ name: 'a', description: 'd', mode: 'all' }]), true)
-  assert.equal(sameRoster([{ name: 'a', description: 'd', mode: 'all' }], [{ name: 'a', description: 'd', mode: 'primary' }]), false)
+  assert.equal(sameRoster([{ name: 'a', description: 'd', mode: 'all', group: 'core' }], [{ name: 'a', description: 'd', mode: 'all', group: 'core' }]), true)
+  assert.equal(sameRoster([{ name: 'a', description: 'd', mode: 'all', group: 'core' }], [{ name: 'a', description: 'd', mode: 'primary', group: 'core' }]), false)
+  assert.equal(sameRoster([{ name: 'a', description: 'd', mode: 'all', group: 'core' }], [{ name: 'a', description: 'd', mode: 'all', group: 'data' }]), false)
   assert.equal(sameRoster([], []), true)
   assert.equal(sameRoster(undefined, []), false)
 })
@@ -85,6 +87,7 @@ test('createRoster publishes summaries and a stable key', () => {
   const roster = createRoster(list, 'Athena', '/proj')
   assert.equal(roster.version, 1)
   assert.deepEqual(roster.agents.map((agent) => agent.name), ['Athena', 'Hermes'])
+  assert.equal(roster.agents[0].group, 'core')
   assert.equal(roster.project, '/proj')
   assert.equal(roster.defaultSelected, 'Athena')
   assert.equal(roster.key, rosterKeyOf(roster.agents, '/proj', 'Athena'))
@@ -131,6 +134,15 @@ test('the projection folds the selection from the logged command', () => {
 
   const blank = definition.apply(state, selectEvent(''))
   assert.equal(blank, state)
+})
+
+test('the projection refuses a subagent-only persona', () => {
+  const definition = createProjectionDefinition()
+  const roster = createRoster(agentList(PLAN), 'Athena', '/proj')
+  const state = definition.apply(definition.init({}, 0), instructionsEvent(roster))
+  const after = definition.apply(state, selectEvent('helper'))
+  assert.equal(after, state)
+  assert.equal(after.selected, 'Athena')
 })
 
 test('the projection keeps a selection the next roster still offers', () => {

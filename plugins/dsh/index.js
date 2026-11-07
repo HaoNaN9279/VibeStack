@@ -31,10 +31,11 @@ import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
 import { createUserMessage } from './lib/messages.js'
 import { normalizeMcpEntries, syncMcpServers } from './lib/mcp.js'
+import { planUsable, unusablePlanReason } from './lib/plan.js'
 import { PlanCache } from './lib/plans.js'
 import { resolvePlan as resolveProjectPlan } from './lib/resolve.js'
 import { renderRules } from './lib/rules.js'
-import { createSkillProvider, readSkillFile } from './lib/skills.js'
+import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skills.js'
 
 /** Plugin name shown in Loader diagnostics. */
 export const name = 'vibestack'
@@ -58,6 +59,12 @@ export function apply(ctx, rawConfig, deps = {}) {
 
   const resolveFor = deps.resolvePlan ?? ((cwd) => resolveProjectPlan(cwd, config))
   const cache = new PlanCache(resolveFor)
+  /** Namespace options applied to every command and skill. */
+  const names = {
+    prefix: config.namePrefix,
+    maxLength: config.maxCommandNameLength,
+    rank: config.skillRank,
+  }
   /** @type {{commands: Map<string, string>, mcpStores: Set<Map<string, {signature: string, fiber: unknown}>>, mcpModule: unknown, warned: Set<string>, sessions: WeakMap<object, {digest: string, mcp: Map<string, {signature: string, fiber: unknown}>}>}} */
   const state = {
     commands: new Map(),
@@ -163,49 +170,94 @@ export function apply(ctx, rawConfig, deps = {}) {
       state = undefined
     }
     const current = typeof state?.selected === 'string' ? state.selected : null
-    if (current !== null && list.some((agent) => agent.name === current)) return current
-    return pickDefaultAgent(list, config.defaultAgent)
+    const personas = personaAgents(list)
+    if (current !== null && personas.some((agent) => agent.name === current)) return current
+    return pickDefaultAgent(personas, config.defaultAgent)
+  }
+
+  /**
+   * Read the current workspace plan for a command invocation.
+   * @param {object | undefined} agent - command agent handle.
+   * @returns {Promise<{plan: Record<string, unknown> | null, cwd: string | null}>} current plan and cwd.
+   */
+  const currentPlanFor = async (agent) => {
+    const session = agent?.session
+    if (session === undefined || session === null) return { plan: null, cwd: null }
+    const cwd = cwdOf(session)
+    if (cwd === null) return { plan: null, cwd: null }
+    const result = await cache.get(cwd)
+    logWarnings(result.warnings)
+    return { plan: result.plan, cwd }
   }
 
   /**
    * Register plan commands that are not registered yet.
+   *
+   * The canonical name is stable across projects, so a command is registered
+   * once and the handler re-reads the current workspace before rendering. That
+   * keeps a domain command from running in a project that does not activate its
+   * group while Core commands remain available everywhere.
    * @param {Record<string, unknown>} plan - resolved plan.
    * @returns {void}
    */
   const syncCommands = (plan) => {
     if (!config.commands || commandsScope === undefined) return
     const project = typeof plan.project === 'string' ? plan.project : ''
-    for (const entry of commandEntries(plan)) {
-      const owner = state.commands.get(entry.name)
-      if (owner !== undefined) {
-        if (owner !== project) {
-          warn('vibestack: command /%s from %s ignored; already registered by %s', entry.name, project, owner)
-        }
-        continue
+    const warnings = []
+    const entries = commandEntries(plan, names, warnings)
+    const skillNames = new Set(skillCandidates(plan, names).map((skill) => skill.name))
+    for (const entry of entries) {
+      if (skillNames.has(entry.canonical)) {
+        warnings.push(`command ${entry.canonical} shadows a skill with the same name`)
       }
+      if (state.commands.has(entry.canonical)) continue
       try {
         commandsScope.commands.register({
-          name: entry.name,
+          name: entry.canonical,
           description: entry.description,
           input: { hint: '[arguments]' },
-          handler: (invocation) => {
+          handler: async (invocation) => {
+            const agent = invocation?.agent
+            const current = await currentPlanFor(agent)
+            if (!planUsable(current.plan)) {
+              return { kind: 'error', text: `VibeStack: ${unusablePlanReason(current.plan)}` }
+            }
+            const currentWarnings = []
+            const live = commandEntries(current.plan, names, currentWarnings)
+            logWarnings(currentWarnings)
+            const entryNow = live.find((candidate) => candidate.canonical === entry.canonical)
+            if (entryNow === undefined) {
+              return {
+                kind: 'error',
+                text: `VibeStack: /${entry.canonical} 不属于当前工作区（未激活 ${entry.group} 能力组）`,
+              }
+            }
+            const deliver = typeof agent?.followup === 'function'
+              ? agent.followup.bind(agent)
+              : typeof agent?.steer === 'function'
+                ? agent.steer.bind(agent)
+                : null
+            if (deliver === null) {
+              return { kind: 'error', text: 'VibeStack: 当前 Agent 不支持投递用户回合' }
+            }
             const attachments = Array.isArray(invocation.attachments) ? invocation.attachments : []
-            const text = renderTemplate(entry.template, invocation.rawInput)
-            invocation.agent.steer(
+            const text = renderTemplate(entryNow.template, invocation.rawInput)
+            deliver(
               createUserMessage({
                 content: [...attachments, { type: 'text', text }],
                 source: { kind: 'user' },
               }),
             )
-            return { kind: 'success', text: `VibeStack: ran /${entry.name}` }
+            return { kind: 'success', text: `VibeStack: 已发送 /${entry.canonical}` }
           },
         })
-        state.commands.set(entry.name, project)
+        state.commands.set(entry.canonical, project)
       } catch (error) {
-        state.commands.set(entry.name, project)
-        warn('vibestack: cannot register command /%s: %o', entry.name, error)
+        state.commands.set(entry.canonical, project)
+        warn('vibestack: cannot register command /%s: %o', entry.canonical, error)
       }
     }
+    logWarnings(warnings)
   }
 
   /**
@@ -247,8 +299,11 @@ export function apply(ctx, rawConfig, deps = {}) {
     /** @type {{key: string, agents: object[], project: string, defaultSelected: string | null, version: number} | null} */
     let roster = null
     if (config.agents) {
-      const list = personaAgents(agentList(plan))
-      roster = createRoster(list, pickDefaultAgent(list, config.defaultAgent), plan.project)
+      // Publish every agent so subagent sessions can inspect the full union;
+      // the persona picker filters `mode: subagent` on both sides.
+      const list = agentList(plan)
+      const personas = personaAgents(list)
+      roster = createRoster(list, pickDefaultAgent(personas, config.defaultAgent), plan.project)
     }
     const key = roster?.key ?? ''
     const stamp = `${rendered.digest}:${key}`
@@ -281,9 +336,15 @@ export function apply(ctx, rawConfig, deps = {}) {
     const result = await cache.get(cwd)
     logWarnings(result.warnings)
     const plan = result.plan
-    if (plan === null || plan.active !== true) return null
+    if (!planUsable(plan)) return null
     syncCommands(plan)
-    await syncMcp(plan, agent)
+    try {
+      await syncMcp(plan, agent)
+    } catch (error) {
+      // An unavailable MCP server must not suppress rules, skills, commands or
+      // the Agent roster; the step still starts with everything else.
+      warn('vibestack: MCP sync failed: %o', error)
+    }
     return injectInstructions(agent, plan)
   }
 
@@ -307,7 +368,7 @@ export function apply(ctx, rawConfig, deps = {}) {
           if (agent === undefined) return ''
           const cwd = cwdOf(agent.session)
           const plan = cwd === null ? null : cache.peek(cwd)
-          if (plan === null || plan.active !== true) return ''
+          if (!planUsable(plan)) return ''
           const list = agentList(plan)
           const selected = selectedOf(agent.session, list)
           if (selected === null) return ''
@@ -325,7 +386,11 @@ export function apply(ctx, rawConfig, deps = {}) {
     if (!config.skills) return
     try {
       scope.skills.registerProvider(() =>
-        createSkillProvider({ getPlan: async (cwd) => (await cache.get(cwd)).plan }),
+        createSkillProvider({
+          getPlan: async (cwd) => (await cache.get(cwd)).plan,
+          names,
+          isUsable: planUsable,
+        }),
       )
     } catch (error) {
       warn('vibestack: cannot register the skill provider: %o', error)
@@ -355,7 +420,7 @@ export function apply(ctx, rawConfig, deps = {}) {
           const result = cwd === null ? null : await cache.get(cwd)
           if (result !== null) logWarnings(result.warnings)
           const plan = result?.plan ?? null
-          const agents = plan !== null && plan.active === true ? personaAgents(agentList(plan)) : []
+          const agents = planUsable(plan) ? personaAgents(agentList(plan)) : []
           if (agents.length === 0) {
             return { kind: 'error', text: 'VibeStack: 当前项目没有可选 Agent（先在该项目激活能力组）' }
           }

@@ -160,7 +160,11 @@ vibe-stack activate data-forge blender
 3. `extends` 依赖先于依赖者
 4. 同名 Agent / 命令 / MCP 后加载者覆盖
 
-项目没有 `.vibestack/stack.json` 时，Core 不加载。领域能力组不默认加载，必须加入 `groups`。
+`vibe-stack resolve` 默认是 `project` 模式：项目没有 `.vibestack/stack.json` 时 Core 不加载。
+DeepSeek Harness 的 VibeStack 模式使用 `--mode vibestack`：**Core 无条件加载**，领域能力组
+仍必须加入 `groups`；会话的 Agent / 命令 / 技能是 Core + 当前工作区并集。
+
+领域能力组不默认加载，必须加入 `groups`。
 
 ## Agent 插件
 

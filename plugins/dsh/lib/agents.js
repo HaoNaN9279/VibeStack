@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto'
 /** Projection key readable from the client as `useProjection('vibestack')`. */
 export const PROJECTION_KEY = 'vibestack'
 /** Projection layout version; bump when fields or fold semantics change. */
-export const PROJECTION_VERSION = 2
+export const PROJECTION_VERSION = 3
 /** Command that selects the session persona. */
 export const SELECT_COMMAND = 'vibestack-agent'
 /** `source.kind` of every message this plugin injects. */
@@ -43,7 +43,7 @@ const EMPTY_STATE = Object.freeze({
 /**
  * Describe agents from a plan.
  * @param {Record<string, unknown>} plan - normalized resolve plan.
- * @returns {{name: string, description: string, mode: string, system: string}[]} agents in plan order.
+ * @returns {{name: string, description: string, mode: string, system: string, group: string}[]} agents in plan order.
  */
 export function agentList(plan) {
   const agents = plan?.agents && typeof plan.agents === 'object' ? plan.agents : {}
@@ -56,6 +56,7 @@ export function agentList(plan) {
       description: typeof value.description === 'string' ? value.description : '',
       mode: typeof value.mode === 'string' ? value.mode : 'all',
       system: typeof value.system === 'string' ? value.system : '',
+      group: typeof value.group === 'string' ? value.group : '',
     })
   }
   return list
@@ -72,14 +73,15 @@ export function personaAgents(list) {
 
 /**
  * Strip host-only fields before publishing the roster.
- * @param {{name: string, description: string, mode: string}[]} list - agent list.
- * @returns {{name: string, description: string, mode: string}[]} publishable rows.
+ * @param {{name: string, description: string, mode: string, group?: string}[]} list - agent list.
+ * @returns {{name: string, description: string, mode: string, group: string}[]} publishable rows.
  */
 export function agentSummaries(list) {
   return list.map((agent) => ({
     name: agent.name,
     description: agent.description,
     mode: agent.mode,
+    group: typeof agent.group === 'string' ? agent.group : '',
   }))
 }
 
@@ -101,8 +103,8 @@ export function pickDefaultAgent(list, preferred = '') {
 
 /**
  * Compare two rosters by published fields.
- * @param {{name: string, description: string, mode: string}[]} left - first roster.
- * @param {{name: string, description: string, mode: string}[]} right - second roster.
+ * @param {{name: string, description: string, mode: string, group?: string}[]} left - first roster.
+ * @param {{name: string, description: string, mode: string, group?: string}[]} right - second roster.
  * @returns {boolean} true when nothing user-visible changed.
  */
 export function sameRoster(left, right) {
@@ -114,7 +116,8 @@ export function sameRoster(left, right) {
       other !== undefined &&
       agent.name === other.name &&
       agent.description === other.description &&
-      agent.mode === other.mode
+      agent.mode === other.mode &&
+      (agent.group ?? '') === (other.group ?? '')
     )
   })
 }
@@ -176,6 +179,7 @@ export function rosterFromEvent(event) {
         name: row.name,
         description: typeof row.description === 'string' ? row.description : '',
         mode: typeof row.mode === 'string' ? row.mode : 'all',
+        group: typeof row.group === 'string' ? row.group : '',
       })
     }
   }
@@ -232,7 +236,9 @@ export function createProjectionDefinition() {
         if (typeof data.name !== 'string' || !SELECT_NAMES.has(data.name)) return state
         const args = typeof data.args === 'string' ? data.args.trim().toLowerCase() : ''
         if (args.length === 0 || args === 'list') return state
-        const match = state.agents.find((agent) => agent.name.toLowerCase() === args)
+        const match = state.agents.find(
+          (agent) => agent.mode !== 'subagent' && agent.name.toLowerCase() === args,
+        )
         if (match === undefined || state.selected === match.name) return state
         return { ...state, selected: match.name }
       }

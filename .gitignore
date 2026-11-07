@@ -13,6 +13,12 @@ tools/*/*/build/
 tools/*/*/*.egg-info/
 tools/video-transcribe/*/models/
 
+# Local test / sandbox scratch
+.tmp/
+.tmp2/
+.acl-repair/
+pytest-cache-files-*/
+
 # OS / editor
 .DS_Store
 Thumbs.db

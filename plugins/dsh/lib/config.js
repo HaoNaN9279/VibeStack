@@ -13,6 +13,14 @@ export const DEFAULT_CONFIG = Object.freeze({
   command: '',
   /** Resolve CLI timeout in milliseconds. */
   timeoutMs: 5000,
+  /** Resolve mode: `vibestack` keeps Core loaded in every workspace. */
+  resolveMode: 'vibestack',
+  /** Namespace prefix for capability-group commands and skills. */
+  namePrefix: 'vibestack',
+  /** Maximum published command/skill name length before hashing. */
+  maxCommandNameLength: 48,
+  /** Skill candidate rank. */
+  skillRank: 250,
   /** Inject capability-group rules as workspace instructions. */
   rules: true,
   /** Expose capability-group skills to the agent. */
@@ -28,6 +36,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   /** Preferred default agent name; empty falls back to `Athena`. */
   defaultAgent: '',
 })
+
+const RESOLVE_MODES = new Set(['project', 'vibestack'])
 
 /**
  * Coerce a raw row config into the plugin's config shape.
@@ -49,7 +59,17 @@ export function resolveConfig(raw) {
       if (Number.isFinite(value) && value > 0) config[key] = Math.floor(value)
       continue
     }
-    if (typeof value === 'string') config[key] = value
+    if (typeof value === 'string') {
+      if (key === 'resolveMode') {
+        if (RESOLVE_MODES.has(value)) config[key] = value
+        continue
+      }
+      config[key] = value
+    }
+  }
+  if (config.namePrefix.length === 0) config.namePrefix = DEFAULT_CONFIG.namePrefix
+  if (config.maxCommandNameLength < 8) {
+    config.maxCommandNameLength = DEFAULT_CONFIG.maxCommandNameLength
   }
   return config
 }

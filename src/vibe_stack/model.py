@@ -188,6 +188,7 @@ class ResolvedPlan:
 
     schema_version: int
     active: bool
+    mode: str
     repository: str
     project: str
     core: ResolvedGroup | None
@@ -205,6 +206,7 @@ class ResolvedPlan:
         return {
             "schema_version": self.schema_version,
             "active": self.active,
+            "mode": self.mode,
             "repository": self.repository,
             "project": self.project,
             "core": self.core.to_dict() if self.core is not None else None,

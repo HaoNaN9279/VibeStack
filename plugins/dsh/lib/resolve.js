@@ -8,8 +8,10 @@
 
 import { execFile } from 'node:child_process'
 
-/** Supported resolve API version. */
-export const RESOLVE_SCHEMA_VERSION = 1
+/** Resolve API versions this adapter understands. */
+export const RESOLVE_SCHEMA_VERSIONS = Object.freeze([1, 2])
+/** Version emitted by the resolver this adapter ships with. */
+export const RESOLVE_SCHEMA_VERSION = 2
 
 const MAX_BUFFER = 16 * 1024 * 1024
 
@@ -52,7 +54,7 @@ export function parsePlan(stdout) {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error('response is not a JSON object')
   }
-  if (parsed.schema_version !== RESOLVE_SCHEMA_VERSION) {
+  if (!RESOLVE_SCHEMA_VERSIONS.includes(parsed.schema_version)) {
     throw new Error(`unsupported schema_version: ${String(parsed.schema_version)}`)
   }
   return parsed
@@ -66,10 +68,13 @@ export function parsePlan(stdout) {
 export function normalizePlan(plan) {
   const record = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {})
   const list = (value) => (Array.isArray(value) ? value : [])
+  const mode = plan.mode === 'vibestack' ? 'vibestack' : 'project'
   return {
     ...plan,
-    active: plan.active === true,
+    active: plan.active === true || mode === 'vibestack',
+    mode,
     project: typeof plan.project === 'string' ? plan.project : '',
+    core: plan.core && typeof plan.core === 'object' && !Array.isArray(plan.core) ? plan.core : null,
     rules: list(plan.rules),
     skills: list(plan.skills),
     agents: record(plan.agents),
@@ -80,14 +85,25 @@ export function normalizePlan(plan) {
 }
 
 /**
- * Run `vibe-stack resolve --json --project <dir>`.
+ * Build the argv for one resolve call.
+ * @param {string} projectDir - absolute session working directory.
+ * @param {{resolveMode?: string}} config - resolved plugin config.
+ * @returns {string[]} argv after the executable.
+ */
+export function resolveArgs(projectDir, config) {
+  const mode = config.resolveMode === 'project' ? 'project' : 'vibestack'
+  return ['resolve', '--json', '--mode', mode, '--project', projectDir]
+}
+
+/**
+ * Run `vibe-stack resolve --json [--mode <mode>] --project <dir>`.
  * @param {string} projectDir - absolute session working directory.
  * @param {import('./config.js').DEFAULT_CONFIG} config - resolved plugin config.
  * @param {(command: string, args: string[], options: Record<string, unknown>) => Promise<{stdout: string, stderr: string}>} [execute] - injectable spawn.
  * @returns {Promise<{plan: Record<string, unknown> | null, warnings: string[]}>} plan or warnings.
  */
 export async function resolvePlan(projectDir, config, execute = defaultExecute) {
-  const args = ['resolve', '--json', '--project', projectDir]
+  const args = resolveArgs(projectDir, config)
   const options = { timeout: resolveTimeout(config.timeoutMs), maxBuffer: MAX_BUFFER }
   const warnings = []
   let lastError = ''

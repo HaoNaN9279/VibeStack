@@ -7,18 +7,21 @@ import {
   cliCandidates,
   normalizePlan,
   parsePlan,
+  resolveArgs,
   resolvePlan,
   resolveTimeout,
 } from '../lib/resolve.js'
 
 const PLAN = {
-  schema_version: 1,
+  schema_version: 2,
   active: true,
+  mode: 'vibestack',
   project: '/proj',
+  core: { name: 'core', version: '0.1.0' },
   rules: [{ name: 'global', path: '/repo/rules/00-global.md', group: 'core' }],
-  skills: [{ name: 'caveman', path: '/repo/skills/caveman', description: 'x' }],
-  agents: { Athena: { description: 'a', mode: 'all', system: '# Athena' } },
-  commands: { run: { description: 'r', template: 'do $ARGUMENTS' } },
+  skills: [{ name: 'caveman', path: '/repo/skills/caveman', description: 'x', group: 'core' }],
+  agents: { Athena: { description: 'a', mode: 'all', system: '# Athena', group: 'core' } },
+  commands: { run: { description: 'r', template: 'do $ARGUMENTS', group: 'core' } },
   mcp: { 'vibe:core_demo': { type: 'remote', url: 'https://example.test/mcp' } },
   warnings: ['group missing'],
 }
@@ -28,10 +31,11 @@ function ok(plan) {
   return { stdout: JSON.stringify(plan), stderr: '' }
 }
 
-test('parsePlan accepts a versioned plan', () => {
+test('parsePlan accepts v1 and v2 plans', () => {
   const plan = parsePlan(JSON.stringify(PLAN))
-  assert.equal(plan.schema_version, 1)
+  assert.equal(plan.schema_version, 2)
   assert.equal(plan.active, true)
+  assert.equal(parsePlan(JSON.stringify({ ...PLAN, schema_version: 1 })).schema_version, 1)
 })
 
 test('parsePlan strips a BOM', () => {
@@ -44,7 +48,7 @@ test('parsePlan rejects broken JSON', () => {
 })
 
 test('parsePlan rejects another schema version', () => {
-  assert.throws(() => parsePlan(JSON.stringify({ ...PLAN, schema_version: 2 })), /unsupported schema_version/)
+  assert.throws(() => parsePlan(JSON.stringify({ ...PLAN, schema_version: 3 })), /unsupported schema_version/)
 })
 
 test('normalizePlan fills defensive defaults', () => {
@@ -53,6 +57,14 @@ test('normalizePlan fills defensive defaults', () => {
   assert.deepEqual(plan.agents, {})
   assert.deepEqual(plan.warnings, [])
   assert.equal(plan.project, '')
+  assert.equal(plan.mode, 'project')
+  assert.equal(plan.core, null)
+})
+
+test('normalizePlan treats a vibestack-mode plan as active', () => {
+  const plan = normalizePlan({ schema_version: 2, active: false, mode: 'vibestack', core: { name: 'core' } })
+  assert.equal(plan.mode, 'vibestack')
+  assert.equal(plan.active, true)
 })
 
 test('normalizePlan keeps only string warnings', () => {
@@ -78,6 +90,11 @@ test('resolveTimeout honours the environment override', () => {
   }
 })
 
+test('resolveArgs defaults to vibestack mode and supports project mode', () => {
+  assert.deepEqual(resolveArgs('/proj', {}), ['resolve', '--json', '--mode', 'vibestack', '--project', '/proj'])
+  assert.deepEqual(resolveArgs('/proj', { resolveMode: 'project' }), ['resolve', '--json', '--mode', 'project', '--project', '/proj'])
+})
+
 test('resolvePlan returns the plan and forwards warnings', async () => {
   const calls = []
   const execute = async (command, args) => {
@@ -87,7 +104,17 @@ test('resolvePlan returns the plan and forwards warnings', async () => {
   const result = await resolvePlan('/proj', { command: 'vibe-stack', timeoutMs: 5000 }, execute)
   assert.equal(result.plan?.active, true)
   assert.deepEqual(result.warnings, ['group missing'])
-  assert.deepEqual(calls[0].slice(1), ['resolve', '--json', '--project', '/proj'])
+  assert.deepEqual(calls[0].slice(1), ['resolve', '--json', '--mode', 'vibestack', '--project', '/proj'])
+})
+
+test('resolvePlan passes project mode when configured', async () => {
+  const calls = []
+  const execute = async (command, args) => {
+    calls.push([command, ...args])
+    return ok(PLAN)
+  }
+  await resolvePlan('/proj', { command: 'vibe-stack', timeoutMs: 5000, resolveMode: 'project' }, execute)
+  assert.deepEqual(calls[0].slice(1), ['resolve', '--json', '--mode', 'project', '--project', '/proj'])
 })
 
 test('resolvePlan fails open on a missing command', async () => {

@@ -24,7 +24,12 @@ from vibe_stack.project import (
     write_lock,
 )
 from vibe_stack.repo import find_repo, write_global_config, read_global_config, default_core
-from vibe_stack.resolve import build_plan, resolve_project
+from vibe_stack.resolve import (
+    MODE_PROJECT,
+    MODE_VIBESTACK,
+    build_plan,
+    resolve_project,
+)
 from vibe_stack.tools import exec_in_tool, run_tool
 
 
@@ -67,6 +72,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="VibeStack repository root",
+    )
+    resolve_parser.add_argument(
+        "--mode",
+        choices=(MODE_PROJECT, MODE_VIBESTACK),
+        default=MODE_PROJECT,
+        help=(
+            "project: historical behavior (no stack means no Core); "
+            "vibestack: keep Core loaded in every workspace (DSH mode)"
+        ),
     )
 
     init = sub.add_parser("init", help="create .vibestack/stack.json")
@@ -137,7 +151,12 @@ def _dispatch(args: argparse.Namespace, repo: Path) -> int:
     if args.command == "sync":
         return _sync(repo, project)
     if args.command == "resolve":
-        return _resolve(repo, project, bool(getattr(args, "json", False)))
+        return _resolve(
+            repo,
+            project,
+            bool(getattr(args, "json", False)),
+            str(getattr(args, "mode", MODE_PROJECT)),
+        )
     if args.command == "tool":
         return _tool(repo, args)
     if args.command == "plugin":
@@ -254,8 +273,8 @@ def _sync(repo: Path, project: Path) -> int:
     return 0
 
 
-def _resolve(repo: Path, project: Path, as_json: bool) -> int:
-    plan = resolve_project(repo, project)
+def _resolve(repo: Path, project: Path, as_json: bool, mode: str) -> int:
+    plan = resolve_project(repo, project, mode=mode)
     if as_json:
         output = json.dumps(plan.to_dict(), ensure_ascii=False, separators=(",", ":"))
         sys.stdout.buffer.write((output + "\n").encode("utf-8"))
@@ -263,6 +282,7 @@ def _resolve(repo: Path, project: Path, as_json: bool) -> int:
         return 0
 
     print(f"active: {'true' if plan.active else 'false'}")
+    print(f"mode: {plan.mode}")
     if plan.core is not None:
         print(f"core: {plan.core.name}@{plan.core.version}")
     print(f"groups: {len(plan.groups)}")

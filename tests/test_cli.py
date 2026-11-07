@@ -40,8 +40,9 @@ def test_cli_resolve_json(repo: Path, project: Path, capsysbinary) -> None:
     assert main(["--repo", str(repo), "resolve", "--json", "--project", str(project)]) == 0
     output = capsysbinary.readouterr().out
     data = json.loads(output.decode("utf-8"))
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
     assert data["active"] is True
+    assert data["mode"] == "project"
     assert [group["name"] for group in data["groups"]] == ["base", "data"]
     assert data["fingerprint"]
 
@@ -52,7 +53,34 @@ def test_cli_resolve_without_stack(
     assert main(["--repo", str(repo), "resolve", "--json", "--project", str(project)]) == 0
     data = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
     assert data["active"] is False
+    assert data["mode"] == "project"
     assert data["core"] is None
+
+
+def test_cli_resolve_vibestack_mode_loads_core_without_stack(
+    repo: Path, project: Path, capsysbinary
+) -> None:
+    assert (
+        main(
+            [
+                "--repo",
+                str(repo),
+                "resolve",
+                "--json",
+                "--mode",
+                "vibestack",
+                "--project",
+                str(project),
+            ]
+        )
+        == 0
+    )
+    data = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert data["active"] is True
+    assert data["mode"] == "vibestack"
+    assert data["core"]["name"] == "core"
+    assert data["agents"]["Helper"]["group"] == "core"
+    assert data["skills"][0]["name"] == "core-skill"
 
 
 def test_cli_resolve_invalid_stack(repo: Path, project: Path, capsys) -> None:

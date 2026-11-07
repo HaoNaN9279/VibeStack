@@ -24,7 +24,7 @@
       config:
         id: vibestack
         name: VibeStack
-        description: 由项目 .vibestack 能力组驱动的模式（规则 / 技能 / 命令 / MCP / Agent 人设）
+        description: Core 常驻的 VibeStack 模式（规则 / 技能 / 命令 / MCP / Agent 人设；Agent、命令、技能取 Core 与当前工作区并集）
         order: 9
         plugins:
           - id: persona

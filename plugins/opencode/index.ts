@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 
 export type JsonRecord = Record<string, any>
 
-const RESOLVE_SCHEMA_VERSION = 1
+const RESOLVE_SCHEMA_VERSIONS = [1, 2]
 const DEFAULT_TIMEOUT_MS = 5000
 const MAX_BUFFER = 16 * 1024 * 1024
 
@@ -20,6 +20,7 @@ export interface Injection {
 
 interface ResolvePlan {
   schema_version: number
+  mode?: string
   active: boolean
   rules?: unknown
   skills?: unknown
@@ -158,7 +159,7 @@ function parsePlan(stdout: string): ResolvePlan {
     throw new Error("response is not valid JSON")
   }
   const plan = asRecord(parsed)
-  if (plan.schema_version !== RESOLVE_SCHEMA_VERSION) {
+  if (!RESOLVE_SCHEMA_VERSIONS.includes(plan.schema_version)) {
     throw new Error(`unsupported schema_version: ${String(plan.schema_version)}`)
   }
   return plan as unknown as ResolvePlan

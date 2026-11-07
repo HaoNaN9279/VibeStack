@@ -4,8 +4,10 @@
 （agent preset），不修改标准、创造、PTC、极简等现有模式；规则、技能、命令、MCP 与
 Agent 人设只在进入该模式的会话里生效。
 
-- 只消费 `vibe-stack resolve --json --project <cwd>`，不扫描能力组、不选版本、不解析
-  frontmatter。
+- **Core 在该模式下始终生效**：不管会话目录是不是项目根、有没有 `.vibestack/stack.json`。
+  领域能力组仍只按该项目的 `groups`（含 `extends`）加载。
+- 只消费 `vibe-stack resolve --json --mode vibestack --project <cwd>`，不扫描能力组、
+  不选版本、不解析 frontmatter。
 - 只在本目录内新增文件，不改 `.vibestack/`、能力组或工具包。
 - 安装完全由 DSH 负责（本地目录 `link:`），不上架 npm，不走插件市场。
 - 失败开放：CLI 缺失、超时、JSON 损坏、schema 不兼容都只写日志，不阻断会话。
@@ -50,12 +52,15 @@ dsh plugin --profile desktop remove dsh-vibestack
 ## 使用
 
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
-2. 进入模式后，首个 `agent/pre-step` 解析当前会话目录的 `.vibestack/stack.json`，
-   把规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
+2. 进入模式后，首个 `agent/pre-step` 用 `vibe-stack resolve --mode vibestack` 解析
+   当前会话目录：Core 始终参与，领域能力组按该目录的 `.vibestack/stack.json` 并集参与。
+   规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
    `source` 里，模型看不到；占位只在会话真正开始工作后出现。
 3. 输入框左下的 **Agent** 菜单（工具行左侧的 `◆` 按钮）切换本会话人设：点开后
-   在上方展开独立菜单，列出项目里的 Agent 与说明。默认选择 Core 的 `Athena`；没有
-   可选 Agent（项目未激活能力组）时菜单不出现。选择会持久化在会话里。
+   在上方展开独立菜单，列出 **Core 的 Agent + 当前工作区依赖的能力组的 Agent 并集**
+   （`mode: subagent` 的 Agent 只进入名册/子任务，不进入人设菜单），并标注每个 Agent
+   的来源组。默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。
+   选择会持久化在会话里。
 4. 也可以直接运行命令：
 
 ```text
@@ -64,18 +69,47 @@ dsh plugin --profile desktop remove dsh-vibestack
 ```
 
 人设只改变系统提示词（追加该 Agent 的 `system`），不限制工具，也不改变其它模式。
+子 Agent 会话继承同一个 preset，也按同一份 Core + 工作区并集生成名册；模型自动派发
+subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一致（子会话工作目录不同
+时按子会话目录解析）。
+
+### 命名空间
+
+能力组命令与技能在 DSH 里统一发布为 `vibestack-<group>-<name>`，避免 Core 与领域组
+同名冲突：
+
+| 能力组 | 原名 | DSH 实际名称 |
+|---|---|---|
+| core | `auto-git-commit` | `/vibestack-core-auto-git-commit` |
+| group-forge | `group-new` | `/vibestack-group-forge-group-new` |
+| core | `caveman`（skill） | `vibestack-core-caveman` |
+
+命令 handler 在每次执行前重新读取当前工作区计划：Core 命令在任何 VibeStack 会话都可
+执行；领域组命令只有在当前工作区激活了该组时才执行，否则返回
+`不属于当前工作区`，不会跨项目泄漏。命令模板以**普通用户回合**投递（`followup`）。
+官方 DSH 命令（`/model`、`/compact` 等）与本插件的 `/vibestack-agent` 不受影响。
+
+### 能力组开发
+
+`custom-agent`、`custom-command`、`custom-mcp`、`custom-rule`、`custom-skill`、
+`custom-tool` 与 `custom-group` 现在属于领域组 `group-forge`，不再随 Core 常驻。在本仓库
+根目录的 `.vibestack/stack.json` 中激活后，VibeStack 会话会出现
+`vibestack-group-forge-custom-*` 技能、`Hephaestus` Agent 与
+`/vibestack-group-forge-group-new`、`/vibestack-group-forge-group-validate` 命令。
 
 ## 能力映射
 
 | VibeStack 计划 | DSH 机制 | 作用域 |
 |---|---|---|
 | `rules` | `agent/pre-step` 注入持久 `<system-reminder>` 用户消息 | 仅 VibeStack 模式 |
-| `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能 | 该 agent |
-| `commands` | `ctx.commands.register()`，模板渲染后 `agent.steer()` | 该 agent |
+| `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能；能力组技能改名 `vibestack-<group>-<name>` | 该 agent |
+| `commands` | `ctx.commands.register()` 注册 `vibestack-<group>-<name>`，handler 校验当前计划后模板渲染并 `agent.followup()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
 | `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
 
-命令模板支持 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
+名册、命令、技能都是 **Core + 当前工作区并集**；名册包含全部 Agent（含 `mode: subagent`），
+人设菜单只展示 primary/all；Agent 行额外带 `group`，用于菜单标注。命令模板支持
+`$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
 
 ## 事件约束
 
@@ -99,6 +133,10 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
   config:
     command: 'C:/Users/me/.local/bin/vibe-stack.exe'
     timeoutMs: 5000
+    resolveMode: vibestack
+    namePrefix: vibestack
+    maxCommandNameLength: 48
+    skillRank: 250
     rules: true
     skills: true
     commands: true
@@ -113,6 +151,10 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
 | `command` | `''` | `vibe-stack` 可执行文件；空则按 `VIBESTACK_CLI` → `vibe-stack.exe` → `vibe-stack` 查找 |
 | `timeoutMs` | `5000` | 解析超时；`VIBESTACK_RESOLVE_TIMEOUT_MS` 优先 |
+| `resolveMode` | `vibestack` | `vibestack`：Core 常驻；`project`：退回旧行为（无 stack 不加载 Core） |
+| `namePrefix` | `vibestack` | 命令/技能命名空间前缀；改名需自行承担冲突 |
+| `maxCommandNameLength` | `48` | 发布名超长时截断并追加短 hash |
+| `skillRank` | `250` | 能力组技能的候选 rank |
 | `rules` | `true` | 注入规则 |
 | `skills` | `true` | 暴露技能 |
 | `commands` | `true` | 注册命令与 `/vibestack-agent` |
@@ -120,6 +162,9 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `mcp` | `true` | 挂载 MCP 服务器 |
 | `maxRulesBytes` | `65536` | 规则上下文上限 |
 | `defaultAgent` | `''` | 默认 Agent 名；空则优先 `Athena` |
+
+> `resolveMode: vibestack` 需要 CLI 输出 `schema_version >= 2`。旧 CLI 不支持
+> `--mode`，会返回错误；此时插件失败开放（不注入），并提示升级 `vibe-stack`。
 
 ## 结构
 
@@ -130,7 +175,7 @@ plugins/dsh/
 ├── cordis.patch.yml     # 只 insert：根级 UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（preset 作用域）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP
+├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
@@ -145,15 +190,16 @@ plugins/dsh/
 ```bash
 # 用 DSH 运行时的 node（沙箱内不能跑 `node --test <dir>`：子进程管道会被拦）
 node test/agents.test.js && node test/config.test.js && node test/commands.test.js \
-  && node test/mcp.test.js && node test/plans.test.js && node test/resolve.test.js \
-  && node test/rules.test.js && node test/skills.test.js && node test/repair.test.js \
-  && node test/plugin.test.js
+  && node test/mcp.test.js && node test/names.test.js && node test/plan.test.js \
+  && node test/plans.test.js && node test/resolve.test.js && node test/rules.test.js \
+  && node test/skills.test.js && node test/repair.test.js && node test/plugin.test.js
 ```
 
 `repair.test.js` 用合成的 v4 日志覆盖：补标记、保留 header 独立帧、幂等、拒绝撕裂尾部、
 备份与原子替换。`plugin.test.js` 用内存版 Cordis 上下文跑完整链路：解析 → 规则注入去重 →
-名册随消息 `source` 发布 → 命令注册与执行 → 人设段落跟随 `command/run` 选择。它也断言插件
-**不向会话追加任何事件**（自定义类型会让会话在重启后无法打开）。
+Core + 工作区并集名册随消息 `source` 发布 → 命名空间命令注册与当前工作区校验 → 人设段落
+跟随 `command/run` 选择 → 子会话拿到同一份名册。它也断言插件**不向会话追加任何事件**
+（自定义类型会让会话在重启后无法打开）。
 
 ### 旧会话修复
 
@@ -197,12 +243,15 @@ dsh --profile <profile> --dump-config | grep -i -A2 vibestack
 
 - `vibe-stack` 不在 `PATH`（桌面版从 GUI 启动时继承的环境可能没有 `~/.local/bin`），
   用 `command` 配置绝对路径。
-- 会话目录不是项目根（必须含 `.vibestack/stack.json`）；子目录会话视为未激活。
+- 会话目录不是项目根：Core 仍然生效；只有领域能力组需要该目录的
+  `.vibestack/stack.json`。子目录会话按子目录解析，通常没有领域组。
 - 解析超时：调大 `timeoutMs` 或 `VIBESTACK_RESOLVE_TIMEOUT_MS`。
 - MCP 未出现：macOS/Windows 桌面版需要 `@deepseek-ai/dsh-mcp-client` 可被运行时解析；
   解析不到时插件只记一条告警并跳过，其它能力不受影响。
-- Agent 菜单不出现：确认会话模式是 VibeStack，项目至少激活了一个含 `agents/` 的
-  能力组（Core 自带 `Athena`、`Hermes`），且规则注入未被 `rules: false` 关掉；
-  新会话要等第一轮注入之后才出现菜单。
+- Agent 菜单不出现：确认会话模式是 VibeStack，且规则注入未被 `rules: false` 关掉；
+  Core 始终自带 `Athena`、`Hermes`，所以正常情况下菜单总会出现。新会话要等第一轮
+  注入之后才出现菜单。
+- 命令不存在：能力组命令在首个 `agent/pre-step` 之后才注册；领域组命令还要求当前
+  会话目录激活了该组。Core 命令（`vibestack-core-*`）在任何 VibeStack 会话都可用。
 - 历史加载失败并提示 `event type "vibestack/..." ... not marked ignorable`：会话由
   0.1.x 写入，用上面的修复脚本补标记。

@@ -9,10 +9,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
+from vibe_stack.errors import VibeStackError
 from vibe_stack.frontmatter import frontmatter_text, parse_frontmatter
 from vibe_stack.loader import discover_tools
 from vibe_stack.model import (
     GroupMeta,
+    GroupRef,
     ProjectStack,
     ResolvedAgent,
     ResolvedCommand,
@@ -23,17 +25,28 @@ from vibe_stack.model import (
     ToolMeta,
 )
 from vibe_stack.project import read_stack, resolve_order
+from vibe_stack.repo import default_core
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+MODE_PROJECT = "project"
+MODE_VIBESTACK = "vibestack"
+_MODES = {MODE_PROJECT, MODE_VIBESTACK}
 _AGENT_MODES = {"primary", "subagent", "all"}
 _SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _T = TypeVar("_T")
 
 
-def resolve_project(repo: Path, project: Path) -> ResolvedPlan:
-    """Read a project's stack and build a fail-open injection plan."""
+def resolve_project(
+    repo: Path, project: Path, *, mode: str = MODE_PROJECT
+) -> ResolvedPlan:
+    """Read a project's stack and build a fail-open injection plan.
+
+    ``mode="vibestack"`` keeps Core loaded even when the project has no
+    ``.vibestack/stack.json`` and reports ``active=true``; the default
+    ``project`` mode preserves the historical inactive result.
+    """
     stack = read_stack(project)
-    return build_plan(repo, project, stack, strict=False)
+    return build_plan(repo, project, stack, strict=False, mode=mode)
 
 
 def build_plan(
@@ -42,13 +55,16 @@ def build_plan(
     stack: ProjectStack | None,
     *,
     strict: bool = False,
+    mode: str = MODE_PROJECT,
 ) -> ResolvedPlan:
     """Build a resolved plan from an already-loaded stack."""
+    requested = _normalize_mode(mode)
     warnings: list[str] = []
-    if stack is None:
+    if requested == MODE_PROJECT and stack is None:
         return ResolvedPlan(
             schema_version=SCHEMA_VERSION,
             active=False,
+            mode=requested,
             repository=_posix(repo),
             project=_posix(project),
             core=None,
@@ -59,16 +75,42 @@ def build_plan(
             commands={},
             mcp={},
             warnings=warnings,
-            fingerprint=_fingerprint(repo, None, [], {}),
+            fingerprint=_fingerprint(repo, None, [], {}, requested),
         )
 
+    stack = _stack_for_mode(stack, requested)
+    if stack is None:  # pragma: no cover - defensive, mode helpers guarantee a stack
+        raise VibeStackError("mode requires a project stack")
     groups = resolve_order(repo, stack, strict=strict, warnings=warnings)
     core_name = stack.core.name if stack.core is not None else ""
     core_meta = next((group for group in groups if group.name == core_name), None)
+    if requested == MODE_VIBESTACK and core_meta is None:
+        # Core is mandatory in this mode: a stale configured version must not
+        # remove it. Retry with the newest available core version.
+        fallback = ProjectStack(
+            schema_version=stack.schema_version,
+            core=GroupRef("core", ""),
+            agents=list(stack.agents),
+            groups=list(stack.groups),
+        )
+        fallback_groups = resolve_order(
+            repo, fallback, strict=strict, warnings=warnings
+        )
+        fallback_core = next(
+            (group for group in fallback_groups if group.name == "core"), None
+        )
+        if fallback_core is not None:
+            groups = fallback_groups
+            core_meta = fallback_core
+            core_name = fallback_core.name
+            warnings.append(
+                f"core {stack.core.name}@{stack.core.version} unavailable; using core@{fallback_core.version}"
+            )
     content = _collect_content(repo, groups, warnings)
     return ResolvedPlan(
         schema_version=SCHEMA_VERSION,
         active=True,
+        mode=requested,
         repository=_posix(repo),
         project=_posix(project),
         core=_group_summary(core_meta) if core_meta is not None else None,
@@ -83,9 +125,43 @@ def build_plan(
         commands=content["commands"],
         mcp=content["mcp"],
         warnings=warnings,
-        fingerprint=_fingerprint(repo, stack, groups, content["tools"]),
+        fingerprint=_fingerprint(
+            repo, stack, groups, content["tools"], requested
+        ),
         group_metas=groups,
     )
+
+
+def _normalize_mode(mode: str) -> str:
+    """Validate a resolve mode."""
+    value = str(mode)
+    if value not in _MODES:
+        raise VibeStackError(
+            f"unknown resolve mode: {value} (expected one of {', '.join(sorted(_MODES))})"
+        )
+    return value
+
+
+def _stack_for_mode(
+    stack: ProjectStack | None, mode: str
+) -> ProjectStack | None:
+    """Apply the mode's Core rule before resolution.
+
+    VibeStack mode (the DSH plugin's mode) always keeps a Core reference, even
+    without ``.vibestack/stack.json``; project mode leaves the stack untouched.
+    """
+    if mode != MODE_VIBESTACK:
+        return stack
+    if stack is None:
+        return ProjectStack(core=default_core())
+    if stack.core is None:
+        return ProjectStack(
+            schema_version=stack.schema_version,
+            core=default_core(),
+            agents=list(stack.agents),
+            groups=list(stack.groups),
+        )
+    return stack
 
 
 def _collect_content(
@@ -304,9 +380,12 @@ def _fingerprint(
     stack: ProjectStack | None,
     groups: list[GroupMeta],
     tools: dict[str, ToolMeta],
+    mode: str = MODE_PROJECT,
 ) -> str:
     digest = hashlib.sha256()
-    digest.update(f"vibestack-resolve-v{SCHEMA_VERSION}\0".encode("utf-8"))
+    digest.update(
+        f"vibestack-resolve-v{SCHEMA_VERSION}:{mode}\0".encode("utf-8")
+    )
     if stack is not None:
         digest.update(
             json.dumps(

@@ -58,13 +58,14 @@ plugins/<agent>/
 
 ## 3. 运行契约
 
-- 启动时调用 `vibe-stack resolve --json --project <project>`。
+- 启动时调用 `vibe-stack resolve --json [--mode vibestack] --project <project>`。
 - `vibe-stack` 必须已安装并在 `PATH` 中；自定义路径使用 `VIBESTACK_CLI`。
 - 调用超时默认 5 秒，可用 `VIBESTACK_RESOLVE_TIMEOUT_MS` 覆盖。
 - 一次启动只解析一次，`config` hook 只应用缓存结果。
 - `stdout` 只按 UTF-8 解析 JSON；`stderr` 用于诊断。
 - 校验 `schema_version`；不兼容时只加载默认技能并告警。
-- 无 `.vibestack/stack.json` 时使用 `active=false` 的结果，不加载 Core。
+- 无 `.vibestack/stack.json` 时：`project` 模式使用 `active=false` 的结果，不加载 Core；
+  `vibestack` 模式（DSH）使用 `active=true` + Core，领域组为空。
 - 解析失败、CLI 缺失、超时、非零退出、JSON 损坏：只加载插件默认技能。
 - 失败不得阻断 Agent 启动。
 - `resolve` 返回的 `warnings` 通过目标 Agent 日志输出。
@@ -94,8 +95,9 @@ plugins/<agent>/
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "active": true,
+  "mode": "vibestack",
   "rules": [{ "name": "global", "path": "...", "group": "core" }],
   "skills": [{ "name": "caveman", "path": "...", "group": "core" }],
   "agents": {
@@ -124,7 +126,8 @@ plugins/<agent>/
 
 插件只提取映射所需字段：rules/skills 的 `path`，agents 的
 `description`/`mode`/`system`，commands 的 `description`/`agent`/`template`，
-以及 `mcp`。不得把 `source`、`group` 等诊断字段写入目标配置。
+以及 `mcp`。不得把 `source`、`group` 等诊断字段写入目标配置；`group` 只用于运行时
+命名空间与展示（如 DSH 的 `vibestack-<group>-<name>`）。
 
 ## 6. 目标 Agent 映射
 
@@ -143,6 +146,13 @@ plugins/<agent>/
 - MCP 按 key 合并。
 - 不覆盖 Agent 主配置文件，只能通过运行时配置扩展机制注入。
 - 目标 Agent 缺少某项能力时，必须在 `capabilities` 中声明不支持并告警。
+
+### DeepSeek Harness（`plugins/dsh`）
+
+- 模式：`--mode vibestack`，Core 常驻；Agent / 命令 / 技能 = Core + 当前工作区并集。
+- 命令与技能统一发布为 `vibestack-<group>-<name>`；Agent 保留原名并带 `group` 展示。
+- 命令 handler 在执行前校验当前工作区计划，领域组命令不会跨项目执行。
+- 子 Agent 会话继承同一 preset，按同一份并集生成名册。
 
 ### OpenCode
 
@@ -179,8 +189,10 @@ vibe-stack plugin status <agent>
 
 ## 8. 验收清单
 
-- [ ] 无 `.vibestack/stack.json` 时不加载 Core 和能力组，但仍加载默认技能。
-- [ ] 只调用一次 `vibe-stack resolve --json`，并传入正确 project。
+- [ ] `project` 模式无 `.vibestack/stack.json` 时不加载 Core 和能力组，但仍加载默认技能。
+- [ ] `vibestack` 模式无 stack 时仍加载 Core；子 Agent 会话拿到同一份并集名册。
+- [ ] 只调用一次 `vibe-stack resolve --json`，并传入正确 project 与 mode。
+- [ ] 命令/技能按 `vibestack-<group>-<name>` 发布；领域组命令不跨项目执行。
 - [ ] 校验 `schema_version`，不兼容时只加载默认技能并告警。
 - [ ] CLI 缺失、超时、非零退出、JSON 损坏时不阻断 Agent 启动。
 - [ ] rules、skills 路径正确追加并去重。
@@ -198,6 +210,9 @@ vibe-stack plugin status <agent>
 
 ```bash
 uv run pytest -q
+node plugins/dsh/test/agents.test.js
+node plugins/dsh/test/plugin.test.js
+# DSH 的其余测试文件逐个运行，见 plugins/dsh/README.md
 cd plugins/opencode && bun test
 ```
 

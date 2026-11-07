@@ -1,4 +1,4 @@
-/** Skill provider: candidate mapping, lazy body load, and bundled skill parsing. */
+/** Skill provider: candidate mapping, namespacing, lazy body load, and bundled skill parsing. */
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
@@ -17,21 +17,26 @@ const PLAN = {
   active: true,
   skills: [
     { name: 'caveman', path: '/repo/skills/caveman', description: 'terse mode', group: 'core' },
-    { name: 'caveman', path: '/repo/skills/caveman-2', description: 'duplicate' },
+    { name: 'caveman', path: '/repo/skills/caveman-2', description: 'duplicate', group: 'core' },
+    { name: 'start-work', path: '/repo/skills/start-work', description: 'multi', group: 'multi-agent-collaboration' },
     { name: 'bad', path: 42 },
   ],
 }
 
-test('skillCandidates dedupes by name and drops malformed rows', () => {
+test('skillCandidates dedupes by canonical name and drops malformed rows', () => {
   const candidates = skillCandidates(PLAN)
-  assert.deepEqual(candidates.map((item) => item.name), ['caveman'])
+  assert.deepEqual(candidates.map((item) => item.name), [
+    'vibestack-core-caveman',
+    'vibestack-multi-agent-collaboration-start-work',
+  ])
   assert.equal(candidates[0].directory, '/repo/skills/caveman')
   assert.equal(candidates[0].description, 'terse mode')
+  assert.equal(candidates[0].originalName, 'caveman')
 })
 
 test('toCandidate matches the DSH provider contract', () => {
-  const candidate = toCandidate({ name: 'caveman', description: 'd', directory: '/repo/skills/caveman' })
-  assert.equal(candidate.name, 'caveman')
+  const candidate = toCandidate({ name: 'vibestack-core-caveman', description: 'd', directory: '/repo/skills/caveman' })
+  assert.equal(candidate.name, 'vibestack-core-caveman')
   assert.equal(candidate.provider, PROVIDER_NAME)
   assert.equal(candidate.rank, SKILL_RANK)
   assert.equal(candidate.path, path.join('/repo/skills/caveman', 'SKILL.md'))
@@ -46,11 +51,20 @@ test('toCandidate matches the DSH provider contract', () => {
 test('the provider lists candidates for an active plan', async () => {
   const provider = createSkillProvider({ getPlan: async () => PLAN })
   const list = await provider.list({ cwd: '/proj' })
-  assert.equal(list.length, 1)
-  assert.equal(list[0].name, 'caveman')
+  assert.equal(list.length, 2)
+  assert.equal(list[0].name, 'vibestack-core-caveman')
 })
 
-test('the provider lists nothing without a cwd or an active plan', async () => {
+test('the provider lists a vibeStack-mode plan without active=true', async () => {
+  const provider = createSkillProvider({
+    getPlan: async () => ({ active: false, mode: 'vibestack', skills: PLAN.skills }),
+    isUsable: (plan) => plan?.mode === 'vibestack',
+  })
+  const list = await provider.list({ cwd: '/proj' })
+  assert.equal(list.length, 2)
+})
+
+test('the provider lists nothing without a cwd or an inactive plan', async () => {
   const provider = createSkillProvider({ getPlan: async () => ({ active: false }) })
   assert.deepEqual(await provider.list({}), [])
   assert.deepEqual(await provider.list({ cwd: '/proj' }), [])
@@ -63,7 +77,7 @@ test('the provider loads and strips the skill body', async () => {
   })
   const [candidate] = await provider.list({ cwd: '/proj' })
   const skill = await provider.get(candidate, {})
-  assert.equal(skill.name, 'caveman')
+  assert.equal(skill.name, 'vibestack-core-caveman')
   assert.equal(skill.provider, PROVIDER_NAME)
   assert.equal(skill.content, '# Body')
 })

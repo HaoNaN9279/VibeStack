@@ -124,7 +124,8 @@ Python MCP 服务（与 CLI 共用工具包）：
 
 `mcp.enabled` 为 `false` 时跳过。不同能力组产生同名 MCP 时，后加载者覆盖。
 
-项目没有 `.vibestack/stack.json` 时不加载任何能力组。
+项目没有 `.vibestack/stack.json` 时：`project` 模式不加载任何能力组；DSH 的 `vibestack`
+模式仍加载 Core，但不加载领域组。
 
 ---
 

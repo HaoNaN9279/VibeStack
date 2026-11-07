@@ -101,11 +101,22 @@ describe("loadInjection", () => {
     expect(injection.warnings.some((item) => item.includes("not valid JSON"))).toBe(true)
   })
 
+  test("accepts a v2 plan and ignores its mode", async () => {
+    const injection = await loadInjection(
+      "/tmp/project",
+      import.meta.dir,
+      executor(basePlan({ schema_version: 2, mode: "project" })),
+    )
+    expect(injection.instructions).toEqual(["/repo/rules/global.md"])
+    expect(injection.skillPaths).toContain("/repo/skills/api-skill")
+    expect(injection.warnings).toEqual([])
+  })
+
   test("unsupported schema keeps startup alive", async () => {
     const injection = await loadInjection(
       "/tmp/project",
       import.meta.dir,
-      executor(basePlan({ schema_version: 2 })),
+      executor(basePlan({ schema_version: 3 })),
     )
     expect(injection.skillPaths.length).toBe(1)
     expect(

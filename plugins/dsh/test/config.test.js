@@ -20,8 +20,16 @@ test('resolveConfig keeps well-typed values', () => {
     mcp: false,
     maxRulesBytes: 1024,
     defaultAgent: 'Hermes',
+    resolveMode: 'project',
+    namePrefix: 'vs',
+    maxCommandNameLength: 40,
+    skillRank: 300,
   })
   assert.equal(config.host, false)
+  assert.equal(config.resolveMode, 'project')
+  assert.equal(config.namePrefix, 'vs')
+  assert.equal(config.maxCommandNameLength, 40)
+  assert.equal(config.skillRank, 300)
   assert.equal(config.command, 'C:/tools/vibe-stack.exe')
   assert.equal(config.timeoutMs, 2500)
   assert.equal(config.rules, false)
@@ -37,9 +45,17 @@ test('resolveConfig ignores mistyped values', () => {
     rules: 0,
     maxRulesBytes: 'big',
     defaultAgent: 42,
+    resolveMode: 'bogus',
+    namePrefix: '',
+    maxCommandNameLength: 4,
+    skillRank: -1,
     unknown: 'ignored',
   })
   assert.equal(config.host, DEFAULT_CONFIG.host)
+  assert.equal(config.resolveMode, DEFAULT_CONFIG.resolveMode)
+  assert.equal(config.namePrefix, DEFAULT_CONFIG.namePrefix)
+  assert.equal(config.maxCommandNameLength, DEFAULT_CONFIG.maxCommandNameLength)
+  assert.equal(config.skillRank, DEFAULT_CONFIG.skillRank)
   assert.equal(config.timeoutMs, DEFAULT_CONFIG.timeoutMs)
   assert.equal(config.rules, DEFAULT_CONFIG.rules)
   assert.equal(config.maxRulesBytes, DEFAULT_CONFIG.maxRulesBytes)

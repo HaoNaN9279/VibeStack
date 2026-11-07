@@ -3,36 +3,49 @@
  *
  * DSH command names are a fixed lowercase grammar, and command handlers run
  * directly against the agent. A VibeStack command is a prompt template, so the
- * handler renders the template and submits it as a normal user message.
+ * handler renders the template and submits it as a normal user turn.
+ *
+ * Every command is published under the `vibestack-<group>-<name>` namespace so
+ * Core and domain groups can never collide, and the handler re-reads the
+ * current workspace's plan before it renders anything.
  */
 
-/** DSH command-name grammar. */
-export const COMMAND_NAME = /^[a-z][a-z0-9_-]*$/u
+import { canonicalName, validCommandName } from './names.js'
 
-/**
- * Whether a name can be registered on DSH.
- * @param {unknown} name - candidate name.
- * @returns {boolean} true when the grammar accepts it.
- */
-export function validCommandName(name) {
-  return typeof name === 'string' && name.length > 0 && name.length <= 64 && COMMAND_NAME.test(name)
-}
+export { validCommandName }
 
 /**
  * Extract selectable command definitions from a plan.
  * @param {Record<string, unknown>} plan - normalized resolve plan.
- * @returns {{name: string, description: string, template: string}[]} usable commands.
+ * @param {{prefix?: string, maxLength?: number}} [options] - namespace options.
+ * @param {string[]} [warnings] - collector for dropped or colliding entries.
+ * @returns {{name: string, canonical: string, group: string, description: string, template: string}[]} usable commands.
  */
-export function commandEntries(plan) {
+export function commandEntries(plan, options = {}, warnings = []) {
   const commands = plan?.commands && typeof plan.commands === 'object' ? plan.commands : {}
   const entries = []
+  const seen = new Set()
   for (const [name, value] of Object.entries(commands)) {
-    if (!validCommandName(name)) continue
     if (!value || typeof value !== 'object') continue
     const description = typeof value.description === 'string' ? value.description.trim() : ''
     const template = typeof value.template === 'string' ? value.template : ''
     if (description.length === 0 || template.length === 0) continue
-    entries.push({ name, description, template })
+    const group = typeof value.group === 'string' && value.group.length > 0 ? value.group : 'core'
+    const canonical = canonicalName(options.prefix, group, name, options)
+    if (canonical.length === 0) {
+      warnings.push(`command ${group}/${name} has no usable name`)
+      continue
+    }
+    if (!validCommandName(canonical)) {
+      warnings.push(`command ${group}/${name} produces an invalid DSH name: ${canonical}`)
+      continue
+    }
+    if (seen.has(canonical)) {
+      warnings.push(`command name collision: ${canonical}`)
+      continue
+    }
+    seen.add(canonical)
+    entries.push({ name, canonical, group, description, template })
   }
   return entries
 }
