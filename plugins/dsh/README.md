@@ -112,7 +112,8 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 ```
 
 - 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
-- 设置页 **VibeStack 模型层** 可增删改层、设默认层；写入是原子替换。
+- 设置页 **VibeStack 模型层** 可增删改层、设默认层，并用 `catalog()` 检测哪些层当前可路由；
+  写入是原子替换。
 - 输入框左下的 **模型层** 菜单（`◈`）是增量控件，不遮蔽 DSH 自带的模型选择；
   `modelSelector: replace` 预留给后续完整替换。
 - **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的

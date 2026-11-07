@@ -130,14 +130,14 @@ class ResolvedSkill:
     description: str = ""
     model: str | None = None
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, include_model: bool = True) -> dict[str, object]:
         data: dict[str, object] = {
             "name": self.name,
             "path": self.path,
             "group": self.group,
             "description": self.description,
         }
-        if self.model:
+        if include_model and self.model:
             data["model"] = self.model
         return data
 
@@ -154,7 +154,7 @@ class ResolvedAgent:
     group: str
     model: str | None = None
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, include_model: bool = True) -> dict[str, object]:
         data: dict[str, object] = {
             "description": self.description,
             "mode": self.mode,
@@ -162,7 +162,7 @@ class ResolvedAgent:
             "source": self.source,
             "group": self.group,
         }
-        if self.model:
+        if include_model and self.model:
             data["model"] = self.model
         return data
 
@@ -179,7 +179,7 @@ class ResolvedCommand:
     agent: str | None = None
     model: str | None = None
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, include_model: bool = True) -> dict[str, object]:
         data: dict[str, object] = {
             "description": self.description,
             "template": self.template,
@@ -188,7 +188,7 @@ class ResolvedCommand:
         }
         if self.agent:
             data["agent"] = self.agent
-        if self.model:
+        if include_model and self.model:
             data["model"] = self.model
         return data
 
@@ -213,27 +213,37 @@ class ResolvedPlan:
     fingerprint: str
     group_metas: list[GroupMeta] = field(default_factory=list, repr=False)
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "schema_version": self.schema_version,
+    def to_dict(self, api_version: int = 2) -> dict[str, object]:
+        """Serialize the plan for one resolve API version.
+
+        v1 is the pre-mode/pre-model shape; v2 adds ``mode`` and the optional
+        ``model`` field on agents, commands, and skills.
+        """
+        include_model = api_version >= 2
+        data: dict[str, object] = {
+            "schema_version": api_version,
             "active": self.active,
-            "mode": self.mode,
             "repository": self.repository,
             "project": self.project,
             "core": self.core.to_dict() if self.core is not None else None,
             "groups": [group.to_dict() for group in self.groups],
             "rules": [rule.to_dict() for rule in self.rules],
-            "skills": [skill.to_dict() for skill in self.skills],
+            "skills": [skill.to_dict(include_model) for skill in self.skills],
             "agents": {
-                name: agent.to_dict() for name, agent in self.agents.items()
+                name: agent.to_dict(include_model)
+                for name, agent in self.agents.items()
             },
             "commands": {
-                name: command.to_dict() for name, command in self.commands.items()
+                name: command.to_dict(include_model)
+                for name, command in self.commands.items()
             },
             "mcp": dict(self.mcp),
             "warnings": list(self.warnings),
             "fingerprint": self.fingerprint,
         }
+        if api_version >= 2:
+            data["mode"] = self.mode
+        return data
 
 
 @dataclass

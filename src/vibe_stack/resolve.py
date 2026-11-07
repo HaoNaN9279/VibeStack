@@ -33,6 +33,7 @@ MODE_VIBESTACK = "vibestack"
 _MODES = {MODE_PROJECT, MODE_VIBESTACK}
 _AGENT_MODES = {"primary", "subagent", "all"}
 _SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+_COMMAND_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 _MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _T = TypeVar("_T")
 
@@ -239,6 +240,9 @@ def _collect_content(
                 warnings.append(
                     f"command {file.name} missing required frontmatter: {', '.join(missing)}"
                 )
+                continue
+            if len(name) > 64 or _COMMAND_NAME.match(name) is None:
+                warnings.append(f"command {file.name} has invalid name: {name}")
                 continue
             commands[name] = ResolvedCommand(
                 name=name,

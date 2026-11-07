@@ -106,6 +106,10 @@ def test_resolve_skips_invalid_content_and_collects_warnings(
         "---\nname: no-description\n---\nbody\n",
     )
     _write(
+        core / "commands/Bad-Name.md",
+        "---\nname: Bad-Name\ndescription: bad\n---\nbody\n",
+    )
+    _write(
         core / "skills/Bad-Name/SKILL.md",
         "---\nname: Bad-Name\ndescription: bad\n---\nbody\n",
     )
@@ -118,11 +122,13 @@ def test_resolve_skips_invalid_content_and_collects_warnings(
     assert all("missing-name" not in rule.path for rule in plan.rules)
     assert "BadMode" not in plan.agents
     assert "no-description" not in plan.commands
+    assert "Bad-Name" not in plan.commands
     assert all("Bad-Name" not in skill.path for skill in plan.skills)
     assert all("has-metadata" not in skill.path for skill in plan.skills)
     assert any("missing-name.md" in warning for warning in plan.warnings)
     assert any("bad-mode.md" in warning for warning in plan.warnings)
     assert any("no-description.md" in warning for warning in plan.warnings)
+    assert any("Bad-Name.md" in warning for warning in plan.warnings)
     assert any("Bad-Name" in warning for warning in plan.warnings)
     assert any("has-metadata" in warning for warning in plan.warnings)
 

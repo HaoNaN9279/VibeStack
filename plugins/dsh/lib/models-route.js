@@ -28,7 +28,8 @@ export function createModelsRoute(options) {
       try {
         if (request.method === 'GET') {
           const snapshot = await service.reload()
-          return json({ ok: true, ...snapshot })
+          const catalog = await service.catalog(request.signal)
+          return json({ ok: true, ...snapshot, catalog })
         }
         let body
         try {

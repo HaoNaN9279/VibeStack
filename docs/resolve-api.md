@@ -6,7 +6,7 @@
 ## 调用
 
 ```bash
-vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
+vibe-stack resolve --json [--mode project|vibestack] [--api-version 1|2] --project <project-dir>
 ```
 
 - `--repo` 可选，默认按全局配置和环境变量定位仓库。
@@ -14,6 +14,8 @@ vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
 - `--mode` 默认 `project`：
   - `project`：历史行为；无 `.vibestack/stack.json` 时返回 `active=false`，不加载 Core。
   - `vibestack`：**Core 始终加载**；无 stack 时也返回 `active=true`，只含 Core。
+- `--api-version` 默认 `2`；`1` 输出旧形状（无 `mode`，agent/command/skill 不带 `model`），
+  用于老插件回退。
 - `stdout` 只包含 JSON，UTF-8 编码。
 - 命令只读，不创建或修改 `.vibestack/lock.json`。
 - 非致命内容问题写入 `warnings`，退出码仍为 `0`。

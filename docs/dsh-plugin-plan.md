@@ -269,7 +269,7 @@ slug(x)   = lowercase(x) → 空格/下划线/非法字符 → "-" → 折叠连
 
 - 客户端在 `settings.section` 注册一页「VibeStack · 模型层」：列表 + 新增/编辑/删除/设默认。
 - 数据读写走 Host 注册的 exact Fetch 路由：
-  - `GET /api/vibestack/models` → `{layers, default, warnings}`
+  - `GET /api/vibestack/models` → `{layers, default, warnings, catalog?}`（`catalog` 标记 available / unroutable）
   - `POST /api/vibestack/models` → 校验 + 原子写 `~/.config/vibestack/config.json`
 - **不接管 DSH 的模型设置页**，也不写 `cordis.patch.yml`：那属于用户 profile，插件改它会扩大爆炸半径；VibeStack 已有自己的全局配置约定（`~/.config/vibestack/config.json`）。
 - 写入前校验：id 语法/唯一、provider/model 非空、`default` 必须指向已有层。provider/model 是否在 catalog 内由 `ctx.vibestack.catalog()` 诊断（离线/账号退登时不阻止保存）。
@@ -414,7 +414,7 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | 模型层 | `lib/layers.js` / `lib/service.js` / `lib/models-route.js`；设置页；`vibestack-layer` 命令；agent / command / skill 三处应用；默认层 |
 | 模型层 UI | 采用 `conversation.input.left` 的 `◈` 增量控件；`conversation.input.model` 的完整替换因全局槽位遮蔽问题保留为后续 |
 
-未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、P2-1（`createUserMessage` 复制）、P2-10（resolver 命令名校验）、`conversation.input.model` 的完整替换、`--api-version 1` 回退。
+未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、P2-1（`createUserMessage` 复制）、`conversation.input.model` 的完整替换。
 
 ### 8.4 不建议改的
 
@@ -529,7 +529,7 @@ plugins/dsh/
 ### 10.2 兼容
 
 - 插件接受 `schema_version` ∈ {1, 2}：v1 视为 `mode=project` 且"所有条目无层"，命令/技能照常工作（这是老用户升级 DSH 插件、未升级 CLI 的过渡态）。
-- CLI `resolve` 默认输出 v2；`--api-version 1` 回退仍为后续项。
+- CLI `resolve` 默认输出 v2；`--api-version 1` 输出无 `mode`/`model` 的旧形状（已实现）。
 - `docs/resolve-api.md` 与 `plugins/README.md` 的注入计划示例同步更新（已完成）。
 
 ### 10.3 能力组侧规则
@@ -576,7 +576,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | 里程碑 | 范围 | 验收 |
 | --- | --- | --- |
 | **M0** 事实探针（0.5–1 天） | ① `conversation.input.model` 能否被第三方单例注册覆盖/共存；② `sessionController.selectModel` 在命令 handler 中对"随后 `followup` 的回合"是否生效；③ 用户 `/skill` 触发的 pre-step 中 `selectModel` 是否影响同回合；④ 设置页 Fetch 路由读写 | 四项有结论；③ 若只能下次回合生效，文档与实现按"次回合"写死 |
-| **M1** resolve v2 剩余字段 | Python `model` 字段、`--api-version 1` 回退 | `resolve --json` 输出 v2 且有 `model`（`mode` 已在 M7 完成；OpenCode 退场已在 M10 完成） |
+| **M1** resolve v2 剩余字段 | 已在 M11 完成（`model` 字段与 `--api-version 1`） | `resolve --json` 输出 v2 且有 `model`；`--api-version 1` 输出旧形状 |
 | **M2** 命名空间 + 命令语义 | `lib/names.js`、命令注册、skill 改名、`followup`、跨项目校验、失败码（已在 M7 完成） | 旧短名不再注册；两个能力组的同名命令不冲突；命令在正确项目才执行 |
 | **M3** 模型层核心 | 已在 M11 实现（schemastery `Config` 仍待） | `ctx.get('vibestack').resolveLayer('strong')` 可读；坏配置不拖垮会话 |
 | **M4** 会话选择器 | `additive` 已实现；`conversation.input.model` 完整替换待解决全局槽位遮蔽 | VibeStack 会话显示层名；切换后实际请求路由改变；切到其他模式保留原生 |

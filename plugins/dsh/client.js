@@ -470,12 +470,14 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = react.useState(false);
       const [message, setMessage] = react.useState(null);
       const [error, setError] = react.useState(null);
+      const [catalog, setCatalog] = react.useState(null);
 
       const load = react.useCallback(async () => {
         try {
           const payload = await readLayerConfig();
           setLayers(Array.isArray(payload.layers) ? payload.layers : []);
           setDefaultId(typeof payload.default === "string" ? payload.default : null);
+          setCatalog(payload.catalog ?? null);
           setError(null);
         } catch (failure) {
           setError(failure instanceof Error ? failure.message : String(failure));
@@ -560,6 +562,13 @@ window.__ModuleLoader__.load({
           "模型层是用户级路由别名。能力组只写 model: <layer>；provider / model / effort 留在本机配置，不进入仓库。"),
         error ? h("div", { style: { color: "var(--dsw-alias-state-error-primary, #d33)", fontSize: "12px" } }, error) : null,
         message ? h("div", { style: { color: "var(--dsw-alias-state-success-primary, #2a7)", fontSize: "12px" } }, message) : null,
+        catalog && !catalog.error
+          ? h("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary, inherit)" } },
+              `路由检测：${(catalog.available ?? []).length} 可用，${(catalog.unroutable ?? []).length} 不可用` +
+                ((catalog.unroutable ?? []).length === 0
+                  ? ""
+                  : " · " + (catalog.unroutable ?? []).map((layer) => `${layer.id}: ${layer.reason}`).join("; ")))
+          : null,
         layers.length === 0
           ? h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "还没有模型层。")
           : h("div", null, layers.map((layer) =>
@@ -590,7 +599,7 @@ window.__ModuleLoader__.load({
             )),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
           h("button", { type: "button", onClick: () => setDraft({ id: "", label: "", provider: "", model: "", reasoningEffort: "", description: "" }), style: primaryButton }, "新增模型层"),
-          h("button", { type: "button", onClick: () => void load(), style: smallButton }, "重新读取")
+          h("button", { type: "button", onClick: () => void load(), style: smallButton }, "检测路由 / 重新读取")
         ),
         draft === null
           ? null

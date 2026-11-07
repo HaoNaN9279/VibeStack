@@ -82,6 +82,14 @@ def build_parser() -> argparse.ArgumentParser:
             "vibestack: keep Core loaded in every workspace (DSH mode)"
         ),
     )
+    resolve_parser.add_argument(
+        "--api-version",
+        dest="api_version",
+        type=int,
+        choices=(1, 2),
+        default=2,
+        help="resolve plan schema version (1: pre-mode/pre-model; 2: current)",
+    )
 
     init = sub.add_parser("init", help="create .vibestack/stack.json")
     init.add_argument("--core", default="", help="core group as name@version")
@@ -154,6 +162,7 @@ def _dispatch(args: argparse.Namespace, repo: Path) -> int:
             project,
             bool(getattr(args, "json", False)),
             str(getattr(args, "mode", MODE_PROJECT)),
+            int(getattr(args, "api_version", 2)),
         )
     if args.command == "tool":
         return _tool(repo, args)
@@ -271,16 +280,21 @@ def _sync(repo: Path, project: Path) -> int:
     return 0
 
 
-def _resolve(repo: Path, project: Path, as_json: bool, mode: str) -> int:
+def _resolve(
+    repo: Path, project: Path, as_json: bool, mode: str, api_version: int = 2
+) -> int:
     plan = resolve_project(repo, project, mode=mode)
     if as_json:
-        output = json.dumps(plan.to_dict(), ensure_ascii=False, separators=(",", ":"))
+        output = json.dumps(
+            plan.to_dict(api_version), ensure_ascii=False, separators=(",", ":")
+        )
         sys.stdout.buffer.write((output + "\n").encode("utf-8"))
         sys.stdout.buffer.flush()
         return 0
 
     print(f"active: {'true' if plan.active else 'false'}")
-    print(f"mode: {plan.mode}")
+    if api_version >= 2:
+        print(f"mode: {plan.mode}")
     if plan.core is not None:
         print(f"core: {plan.core.name}@{plan.core.version}")
     print(f"groups: {len(plan.groups)}")
