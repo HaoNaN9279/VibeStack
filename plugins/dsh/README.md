@@ -142,8 +142,8 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
 | `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
 
-名册、命令、技能都是 **Core + 当前工作区并集**；名册包含全部 Agent（含 `mode: subagent`），
-人设菜单只展示 primary/all；Agent 行额外带 `group`，用于菜单标注。命令模板支持
+名册、命令、技能都是 **Core + 当前工作区并集**；名册与人设菜单都包含全部 Agent（含
+`mode: subagent`）；Agent 行额外带 `group`，用于菜单标注。命令模板支持
 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
 
 ## 事件约束

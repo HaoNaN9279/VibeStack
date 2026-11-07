@@ -774,8 +774,8 @@ capability-groups/domain/group-forge/0.1.0/
 
 - 名册（roster）= 并集中的**全部** Agent，包括 `mode: subagent`；这样父/子会话都持有
   完整并集。
-- 左下角人设菜单只显示 `mode != "subagent"` 的 Agent；`subagent`-only Agent 只用于子任务，
-  投影层也拒绝把它们选为人设。
+- 左下角人设菜单显示**全部** Agent（含 `subagent`-only）；按当前需求，`mode` 不再过滤
+  可选的会话人设。
 - 默认选中 `Athena`（Core 常驻，因此默认总存在）；`defaultAgent` 可覆盖。
 - 菜单每行显示 `Agent 名 + 来源组`；选择通过 `/vibestack-agent <name>` 写入
   `command/run`，投影跨重启保留。
@@ -845,8 +845,8 @@ DSH 的 subagent（spawn / fork）子会话默认继承父会话的 preset；本
 4. 子会话的 `systemPrompt` 人设段、命令注册、技能提供者也读同一份计划。
 
 因此“会话自动指定 subagent 任务”时，子会话的 Agent / 命令 / 技能列表是
-**Core + 子会话工作区并集**：名册包含全部 Agent（含 `mode: subagent`），人设菜单只展示
-primary/all，命令与技能是同一份 canonical 并集。不需要额外工具或动态 preset。
+**Core + 子会话工作区并集**：名册与父子会话的人设菜单都包含全部 Agent（含
+`mode: subagent`），命令与技能是同一份 canonical 并集。不需要额外工具或动态 preset。
 
 ### 19.2 cwd 规则
 
