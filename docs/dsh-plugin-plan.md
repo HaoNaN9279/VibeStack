@@ -774,8 +774,8 @@ capability-groups/domain/group-forge/0.1.0/
 
 - 名册（roster）= 并集中的**全部** Agent，包括 `mode: subagent`；这样父/子会话都持有
   完整并集。
-- 左下角人设菜单显示**全部** Agent（含 `subagent`-only）；按当前需求，`mode` 不再过滤
-  可选的会话人设。
+- 左下角人设菜单只显示 `mode != "subagent"` 的 Agent；`subagent`-only Agent 保留在名册中
+  供子任务引用，投影层也不允许把它们选为人设。
 - 默认选中 `Athena`（Core 常驻，因此默认总存在）；`defaultAgent` 可覆盖。
 - 菜单每行显示 `Agent 名 + 来源组`；选择通过 `/vibestack-agent <name>` 写入
   `command/run`，投影跨重启保留。
@@ -845,8 +845,8 @@ DSH 的 subagent（spawn / fork）子会话默认继承父会话的 preset；本
 4. 子会话的 `systemPrompt` 人设段、命令注册、技能提供者也读同一份计划。
 
 因此“会话自动指定 subagent 任务”时，子会话的 Agent / 命令 / 技能列表是
-**Core + 子会话工作区并集**：名册与父子会话的人设菜单都包含全部 Agent（含
-`mode: subagent`），命令与技能是同一份 canonical 并集。不需要额外工具或动态 preset。
+**Core + 子会话工作区并集**：名册包含全部 Agent（含 `mode: subagent`），人设菜单只展示
+primary/all，命令与技能是同一份 canonical 并集。不需要额外工具或动态 preset。
 
 ### 19.2 cwd 规则
 
@@ -877,7 +877,7 @@ DSH 的 subagent（spawn / fork）子会话默认继承父会话的 preset；本
 | resolver | `schema_version 2`、`mode`、`--mode vibestack`、Core 合成、fingerprint 纳入 mode |
 | group-forge | 新领域组；6 个 `custom-*` 从 Core 移入；新增 `custom-group`、规则、Agent、2 个命令 |
 | 插件 | `resolveMode` / `namePrefix` / `maxCommandNameLength` / `skillRank`；`lib/names.js`、`lib/plan.js`；canonical 命令与技能；`followup`；当前工作区校验；roster `group`（projection v3） |
-| 客户端 | 左下角 Agent 菜单显示全部 Agent 与来源组；右下角模型位替换为层选择（非 VibeStack 回退原生）；设置页「VibeStack 模型层」 |
+| 客户端 | 左下角 Agent 菜单显示 primary/all Agent 与来源组；右下角模型位替换为层选择（非 VibeStack 回退原生）；设置页「VibeStack 模型层」 |
 | 模型层 | `lib/layers.js`、`lib/service.js`、`lib/models-route.js`；`vibestack-core` 行 `ctx.provide`；GET/POST `/api/vibestack/models`；`vibestack-layer` 命令；Agent/命令/技能/默认层应用 |
 | 文档 | 本文件、`AGENTS.md`、根 `README.md`、`plugins/README.md`、`plugins/dsh/README.md`、`docs/resolve-api.md`、`docs/architecture.md`、插件自带 skill |
 | OpenCode 退场 | `plugins/opencode/` 删除；CLI `plugin install` 移除；`plugin list/status` 保留自省；能力组文案清理 |

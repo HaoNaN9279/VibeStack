@@ -57,7 +57,8 @@ dsh plugin --profile desktop remove dsh-vibestack
    规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
    `source` 里，模型看不到；占位只在会话真正开始工作后出现。
 3. 输入框左下的 **Agent** 菜单（`◆` 按钮）切换本会话人设：列出 **Core 的 Agent +
-   当前工作区依赖的能力组的全部 Agent**（包括 `mode: subagent` 的定义），并标注来源组。
+   当前工作区依赖的能力组的可选 Agent**（`mode` 为 `primary` / `all`；`subagent`-only
+   留在名册中，不进入该菜单），并标注来源组。
    默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。选择会持久化。
 4. 输入框右下角的模型位替换为 **模型层** 选择（未配置时用内置 `flash` 通用层兜底）；
    选层等价于切换会话模型路由。也可以用命令：
@@ -113,7 +114,8 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 - 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
 - 设置页 **VibeStack 模型层** 可增删改层、设默认层，并用 `catalog()` 检测哪些层当前可路由；
   写入是原子替换。
-- **左下角始终是 Agent 选择**：列出 Core + 当前工作区能力组的全部 Agent。
+- **左下角始终是 Agent 选择**：列出 Core + 当前工作区能力组中 `mode != subagent` 的 Agent；
+  `subagent`-only 定义保留在名册中供子任务引用。
 - **右下角模型位替换为模型层选择**：`modelSelector: replace`（默认）用低 priority 遮蔽
   `conversation.input.model`；VibeStack 会话显示层，其它模式回退到实时原生模型目录。
   `modelSelector: additive` 可退回“保留原生模型位 + 左下角额外层控件”的兼容形态。
@@ -142,8 +144,8 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
 | `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
 
-名册、命令、技能都是 **Core + 当前工作区并集**；名册与人设菜单都包含全部 Agent（含
-`mode: subagent`）；Agent 行额外带 `group`，用于菜单标注。命令模板支持
+名册、命令、技能都是 **Core + 当前工作区并集**；名册包含全部 Agent（含 `mode: subagent`），
+人设菜单只展示 primary/all；Agent 行额外带 `group`，用于菜单标注。命令模板支持
 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
 
 ## 事件约束

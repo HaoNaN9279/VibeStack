@@ -920,9 +920,8 @@ window.__ModuleLoader__.load({
       }
 
       const roster = state && Array.isArray(state.agents) ? state.agents : [];
-      // The left menu lists every Agent in Core + the current workspace union,
-      // including subagent-only definitions.
-      const agents = roster.filter((agent) => agent && typeof agent.name === "string");
+      // subagent-only definitions stay in the roster but not in the persona menu.
+      const agents = roster.filter((agent) => agent && agent.mode !== "subagent");
       const selected =
         state && typeof state.selected === "string" && agents.some((agent) => agent.name === state.selected)
           ? state.selected

@@ -24,8 +24,8 @@ VibeStack 用能力组（capability group）组织 Agent 配置。进入 DeepSee
 ## Agent 人设
 
 会话输入区左下的 **Agent** 菜单切换本会话人设，列出 **Core 的 Agent + 当前工作区依赖
-的能力组 Agent 并集**（含 `mode: subagent` 的 Agent），并标注来源组。默认选择 `Athena`。
-右下角的模型位用于切换模型层。也可以用命令：
+的能力组 Agent 并集**（`mode: subagent` 的 Agent 留在名册，不进入人设菜单），并标注来源组。
+默认选择 `Athena`。右下角的模型位用于切换模型层。也可以用命令：
 
 ```text
 /vibestack-agent          # 列出可选 Agent

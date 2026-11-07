@@ -240,7 +240,9 @@ export function createProjectionDefinition() {
         if (typeof data.name !== 'string' || !SELECT_NAMES.has(data.name)) return state
         const args = typeof data.args === 'string' ? data.args.trim().toLowerCase() : ''
         if (args.length === 0 || args === 'list') return state
-        const match = state.agents.find((agent) => agent.name.toLowerCase() === args)
+        const match = state.agents.find(
+          (agent) => agent.mode !== 'subagent' && agent.name.toLowerCase() === args,
+        )
         if (match === undefined || state.selected === match.name) return state
         return { ...state, selected: match.name }
       }

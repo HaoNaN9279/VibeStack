@@ -137,12 +137,13 @@ test('the projection folds the selection from the logged command', () => {
   assert.equal(blank, state)
 })
 
-test('the projection accepts a subagent-only persona', () => {
+test('the projection refuses a subagent-only persona', () => {
   const definition = createProjectionDefinition()
   const roster = createRoster(agentList(PLAN), 'Athena', '/proj')
   const state = definition.apply(definition.init({}, 0), instructionsEvent(roster))
   const after = definition.apply(state, selectEvent('helper'))
-  assert.equal(after.selected, 'helper')
+  assert.equal(after, state)
+  assert.equal(after.selected, 'Athena')
 })
 
 test('the projection keeps a selection the next roster still offers', () => {
