@@ -110,7 +110,7 @@ export class VibeStackService {
       const next = await readModels(this.#file)
       const layers = withBuiltinLayer(next.layers)
       this.layers = layers
-      this.default = next.default ?? (layers[0]?.id === BUILTIN_LAYER.id ? BUILTIN_LAYER.id : null)
+      this.default = next.default ?? BUILTIN_LAYER.id
       this.warnings = next.warnings
       this.digest = layersDigest(layers)
       for (const warning of next.warnings) this.logger?.warn?.(`vibestack: ${warning}`)

@@ -61,7 +61,7 @@ test('the core row provides ctx.vibestack and registers the models route', async
     const response = await routes[0].fetch(new Request('http://localhost/api/vibestack/models'))
     const payload = await response.json()
     assert.equal(payload.ok, true)
-    assert.deepEqual(payload.layers.map((layer) => layer.id), ['strong'])
+    assert.deepEqual(payload.layers.map((layer) => layer.id), ['strong', 'flash'])
     assert.equal(payload.default, 'strong')
     assert.equal(payload.selector, 'replace')
   } finally {

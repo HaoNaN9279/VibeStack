@@ -64,7 +64,7 @@ test('the service exposes API v2 and layer lookup', async () => {
   try {
     assert.equal(service.apiVersion, API_VERSION)
     assert.equal(service.defaultLayer(), 'strong')
-    assert.equal(service.listLayers().length, 2)
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), ['fast', 'strong', 'flash'])
     assert.equal(service.resolveLayer('strong').reasoningEffort, 'high')
     assert.equal(service.hasModel('missing'), false)
     assert.equal(service.listWarnings().length, 0)
@@ -99,7 +99,7 @@ test('reload keeps the previous snapshot when the file is unreadable', async () 
   try {
     await writeFile(file, '{', 'utf8')
     await service.reload()
-    assert.equal(service.listLayers().length, 1)
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), ['fast', 'flash'])
     assert.match(service.listWarnings().join('\n'), /cannot read/)
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -125,7 +125,8 @@ test('catalog reports missing layers as unroutable', async () => {
     }
     const result = await service.catalog()
     assert.deepEqual(result.available.map((layer) => layer.id), ['known'])
-    assert.deepEqual(result.unroutable.map((layer) => layer.id), ['unknown'])
+    assert.ok(result.unroutable.some((layer) => layer.id === 'unknown'))
+    assert.ok(result.unroutable.some((layer) => layer.id === 'flash'))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

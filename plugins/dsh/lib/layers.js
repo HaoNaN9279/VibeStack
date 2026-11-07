@@ -35,13 +35,13 @@ export const BUILTIN_LAYER = Object.freeze({
 })
 
 /**
- * Add the built-in layer only when the user configured none.
+ * Append the built-in layer unless the user already defined the same id.
  * @param {object[]} layers - configured layers.
- * @returns {object[]} configured layers or `[BUILTIN_LAYER]`.
+ * @returns {object[]} configured layers plus the generic fallback.
  */
 export function withBuiltinLayer(layers) {
-  if (layers.length > 0) return layers
-  return [{ ...BUILTIN_LAYER }]
+  if (layers.some((layer) => layer.id === BUILTIN_LAYER.id)) return layers
+  return [...layers, { ...BUILTIN_LAYER }]
 }
 
 /**

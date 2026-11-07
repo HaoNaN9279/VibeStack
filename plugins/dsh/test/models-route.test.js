@@ -31,7 +31,7 @@ test('the route exposes the current layers', async () => {
     assert.equal(response.status, 200)
     const payload = await response.json()
     assert.equal(payload.ok, true)
-    assert.deepEqual(payload.layers.map((layer) => layer.id), ['fast'])
+    assert.deepEqual(payload.layers.map((layer) => layer.id), ['fast', 'flash'])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
