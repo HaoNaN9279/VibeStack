@@ -14,8 +14,9 @@ Agent 人设只在进入该模式的会话里生效。
 
 ## 安装
 
-需要：`vibe-stack` 已安装并在 `PATH`（`uv tool install --from <repo> vibe-stack`），
-DSH 桌面版 0.2.x。
+需要：`vibe-stack` 已安装并在 `PATH`（`uv tool install --force --from <repo> vibe-stack`），
+且版本支持 `resolve --mode vibestack`（0.5.0+）。旧 CLI 只支持 `--project`，会让
+VibeStack 会话解析失败，表现为没有 Agent 菜单或没有规则注入；升级后重启 DSH。
 
 装进桌面版正在使用的 profile（先完全退出桌面版，再执行）：
 
@@ -52,10 +53,11 @@ dsh plugin --profile desktop remove dsh-vibestack
 ## 使用
 
 1. 会话模式选择器里选 **VibeStack**（新会话默认仍是标准模式）。
-2. 进入模式后，首个 `agent/pre-step` 用 `vibe-stack resolve --mode vibestack` 解析
-   当前会话目录：Core 始终参与，领域能力组按该目录的 `.vibestack/stack.json` 并集参与。
-   规则、Agent 名册、技能、命令与 MCP 一起装进本会话。名册写在注入消息的
-   `source` 里，模型看不到；占位只在会话真正开始工作后出现。
+2. 选中模式后，插件立刻用 `vibe-stack resolve --mode vibestack` 解析当前会话目录，
+   并把名册消息提前 append 到空白会话，因此左下角 Agent 菜单无需等第一条消息。
+   首个 `agent/pre-step` 再刷新一次（按 digest/roster key 去重）：Core 始终参与，
+   领域能力组按该目录的 `.vibestack/stack.json` 并集参与。规则、Agent 名册、技能、
+   命令与 MCP 一起装进本会话；名册写在注入消息的 `source` 里，不显示为用户消息。
 3. 输入框左下的 **Agent** 菜单（`◆` 按钮）切换本会话人设：列出 **Core 的 Agent +
    当前工作区依赖的能力组的可选 Agent**（`mode` 为 `primary` / `all`；`subagent`-only
    留在名册中，不进入该菜单），并标注来源组。

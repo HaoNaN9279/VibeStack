@@ -25,7 +25,7 @@ window.__ModuleLoader__.load({
     const h = react.createElement;
 
     /** Services this client plugin consumes. */
-    const inject = ["slots", "remote", "remote.commands"];
+    const inject = ["slots", "remote", "remote.commands", "remote.session", "sessions"];
 
     /**
      * The client context that owns the slot registration.

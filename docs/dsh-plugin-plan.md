@@ -782,6 +782,10 @@ capability-groups/domain/group-forge/0.1.0/
 - 同名 Agent 按加载顺序后加载覆盖；被覆盖的行只显示最终来源组。
 - 名册随注入消息的 `source.roster` 发布；`roster` 增量包含 `group`，projection 版本升到 3。
   切换人设不会重新注入规则。
+- 模式选中时立即 `hydrate`：解析工作区、注册命令，并把同一条注入消息以
+  `surfaceOp: 'append'` 追加到空白会话，使 Agent 菜单在第一条消息前出现；
+  首个 `agent/pre-step` 按 digest/roster key 去重。旧 CLI 不支持 `--mode` 时解析失败，
+  需 `uv tool install --force` 升级到 0.5.0+。
 
 ### 18.3 命令列表
 

@@ -466,10 +466,31 @@ test('a repeat step reuses the resolve result', async () => {
   assert.equal(calls, 1)
 })
 
-test('the plugin registers no session or preset listeners', () => {
+test('the plugin registers the step and early-roster listeners', () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
-  assert.deepEqual([...harness.handlers.keys()], ['agent/pre-step'])
+  assert.deepEqual(
+    [...harness.handlers.keys()].sort(),
+    ['agent-preset/selected', 'agent/created', 'agent/pre-step', 'session/event'],
+  )
+})
+
+test('the roster is appended as soon as the preset is selected', async () => {
+  const harness = createHarness()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  const handler = harness.handlers.get('session/event')
+  await handler(harness.session, {
+    type: 'agent-preset/selected',
+    data: { agentPreset: 'vibestack' },
+  })
+  const appended = harness.session.events.find((event) => event.type === 'user/message')
+  assert.ok(appended)
+  assert.equal(appended.data.source.kind, 'vibestack')
+  assert.ok(appended.data.source.roster)
+  assert.deepEqual(
+    appended.data.source.roster.agents.map((agent) => agent.name),
+    ['Athena', 'Hermes', 'Oracle', 'Researcher'],
+  )
 })
 
 /**

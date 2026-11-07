@@ -87,6 +87,8 @@ export { Config }
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PERSONA_SECTION_ORDER = 10150
 const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
+/** Preset id this plugin is mounted under. */
+const PRESET_ID = 'vibestack'
 /** Management command for choosing a model layer. */
 export const LAYER_COMMAND = 'vibestack-layer'
 
@@ -611,6 +613,94 @@ export function apply(ctx, rawConfig, deps = {}) {
     await applySkillLayers(agent, plan, messages)
     return injectInstructions(agent, plan)
   }
+
+  /** Sessions with an early-roster publish already in flight. */
+  const hydrating = new WeakSet()
+
+  /**
+   * Publish the roster before the first turn.
+   *
+   * The mode can be selected while a session is still blank, and the composer's
+   * Agent menu is driven by the injected message's `source.roster`. Appending
+   * the same message here makes the menu exist immediately; `agent/pre-step`
+   * deduplicates it later by digest/roster key.
+   * @param {object} session - session handle.
+   * @returns {Promise<void>} resolves after the append attempt.
+   */
+  const hydrate = (session) => {
+    if (!config.agents || session === undefined || session === null) return Promise.resolve()
+    if (hydrating.has(session)) return Promise.resolve()
+    hydrating.add(session)
+    return (async () => {
+      try {
+        const cwd = cwdOf(session)
+        if (cwd === null) return
+        const result = await cache.get(cwd)
+        logWarnings(result.warnings)
+        const plan = result.plan
+        if (!planUsable(plan)) return
+        syncCommands(plan)
+        const message = await injectInstructions({ session }, plan)
+        if (message === null) return
+        try {
+          // The first user message must declare how it enters the surface.
+          session.append('user/message', message, { surfaceOp: 'append' })
+        } catch (error) {
+          warn('vibestack: cannot append the early roster: %o', error)
+        }
+      } catch (error) {
+        warn('vibestack: cannot publish the early roster: %o', error)
+      } finally {
+        hydrating.delete(session)
+      }
+    })()
+  }
+
+  /**
+   * Resolve a session handle from a preset id or an event payload.
+   * @param {unknown} value - id or session/payload.
+   * @returns {object | null} session handle.
+   */
+  const sessionFrom = (value) => {
+    if (value && typeof value === 'object' && value.session) return value.session
+    if (value && typeof value === 'object' && typeof value.append === 'function') return value
+    if (typeof value !== 'string') return null
+    try {
+      const agents = ctx.get('agents')
+      const fromAgent = agents?.get?.(value)?.session
+      if (fromAgent !== undefined && fromAgent !== null) return fromAgent
+      return ctx.get('sessions')?.get?.(value) ?? null
+    } catch {
+      return null
+    }
+  }
+
+  const onPresetSelected = (first, second) => {
+    const sessionId = typeof first === 'string'
+      ? first
+      : first?.sessionId ?? first?.session?.id ?? first?.id
+    const preset = typeof first === 'string'
+      ? second
+      : first?.agentPreset ?? first?.preset
+    if (preset !== PRESET_ID) return undefined
+    const session = sessionFrom(sessionId)
+    if (session === null) return undefined
+    return hydrate(session)
+  }
+
+  ctx.on('agent-preset/selected', onPresetSelected)
+  ctx.on('session/event', (session, event) => {
+    if (!config.agents || event?.type !== 'agent-preset/selected') return undefined
+    if (event.data?.agentPreset !== PRESET_ID) return undefined
+    return hydrate(session)
+  })
+  ctx.on('agent/created', (payload) => {
+    if (!config.agents) return undefined
+    const session = sessionFrom(payload?.agent)
+    if (session === null) return undefined
+    void hydrate(session)
+    return undefined
+  })
 
   ctx.inject(['sessionProjections'], (scope) => {
     if (!config.agents) return
