@@ -1,14 +1,14 @@
-# VibeStack × DeepSeek Harness 插件开发方案（v2.1）
+# VibeStack × DeepSeek Harness 插件开发方案（v2.2）
 
 | 项 | 值 |
 | --- | --- |
-| 文档版本 | 2.1（新增 R7–R10：Core 常驻 / group-forge / 并集列表 / 子会话名册） |
+| 文档版本 | 2.2（OpenCode 退场；新增 R7–R10：Core 常驻 / group-forge / 并集列表 / 子会话名册） |
 | 日期 | 2026-11-07 |
 | 目标运行环境 | DSH `0.2.1-rc.5`（桌面版 / web profile） |
 | 插件 | `dsh-vibestack`（`D:\workspace\VibeStack\plugins\dsh`，本地 `dsh plugin add` 安装） |
 | 范围 | 只自用：不发布 npm、不上架插件市场、不走 DSH 官方验证/审核流程 |
 | 关联 | HNFlow 插件（`dsh-hnflow`）**强依赖**本插件；本插件不知道 HNFlow 存在（单向依赖） |
-| 文档状态 | 方案稿 + 实施记录。§16–§19 与 §8.3 为本次已实施部分；§4（OpenCode 退场）、§7（模型中间层）与 §9 的根级服务仍未实施，保留为后续里程碑 |
+| 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§16–§19 与 §8.3 已实施；§7（模型中间层）与 §9 的根级服务仍未实施，保留为后续里程碑 |
 
 ---
 
@@ -38,7 +38,7 @@
 
 ## 1. 范围与前提
 
-1. **只做 DSH 适配器**：计划删除 OpenCode，`plugins/` 最终只有 `dsh`；本次尚未执行 §4 的删除。
+1. **只做 DSH 适配器**：`plugins/opencode/` 已删除，`plugins/` 下只有 `dsh`。
 2. **只自用**：不追求 npm 发布、市场上架、官方审核所需的元数据与展示规范；但仍遵守 DSH 的**技术**插件契约（bundle manifest / Config schema / 生命周期 / 命令语法 / 技能语法 / 不写自定义会话事件）。
 3. **不重复实现 resolver**：插件仍然只消费 `vibe-stack resolve --json [--mode vibestack]`；不扫描能力组、不解析 frontmatter、不选版本。新增字段由 resolver 输出，插件只做映射。
 4. **不新增第三方运行时依赖**：JS 侧只用 Node 内置与 DSH 运行时装好的 React。
@@ -99,7 +99,7 @@
 
 ### 4.2 能力组内容清理
 
-- `compatibility: opencode`（`markitdown`、`video-transcribe-*`、`start-work` 等 5 处）→ 删除该字段（当前 resolver 只禁止 `metadata`，其他字段被忽略）；如要保留语义，改成 `compatibility: dsh`。
+- `compatibility: opencode`（`markitdown`、`video-transcribe-*`、`start-work` 等 4 处）→ 删除该字段（当前 resolver 只禁止 `metadata`，其他字段被忽略）；如要保留语义，改成 `compatibility: dsh`。
 - `data-forge/SKILL.md` 中「通常由 OpenCode 插件自动加载」→ 改为「由 DSH 插件挂载」。
 - `multi-agent-collaboration/agents/sisyphus.md` 的「OpenCode AI 编排器」→ 改为「AI 编排器」（人设文本，不影响解析）。
 - `photoshop/references/方案.md` 是历史参考资料，**不改**；但在文件头标注「历史方案，工具名已过时」。
@@ -108,6 +108,21 @@
 
 - `stack.json` 的 `agents: ["opencode"]` 字段：只有 DSH 后它没有含义。方案：标记为**已废弃**，resolver 继续接受但忽略，文档写明；下一版 stack schema 再删。
 - `plugins/dsh/plugin.json` 没有 `install` 字段（DSH 不需要复制安装）：保留清单，用于 `vibe-stack plugin list/status` 自省。
+
+### 4.4 实施记录（2026-11-07）
+
+| 项 | 结果 |
+| --- | --- |
+| `plugins/opencode/` | 已删除；`plugins/` 只剩 `dsh` |
+| `vibe-stack plugin install` | 已退场；`plugin list/status` 保留为自省 |
+| `plugins/README.md` / 根 `README.md` / `AGENTS.md` / `docs/architecture.md` | 全部改写为 DSH |
+| `compatibility: opencode` | 4 处已删除（`markitdown`、`start-work`、`video-transcribe-fast/full`） |
+| `data-forge` / `sisyphus` / `photoshop-generate` | 文案改为 DSH 或中性表述 |
+| `photoshop/references/方案.md` | 文件头已标注历史资料，内容未改 |
+| 仓库测试 | 移除 OpenCode 测试；新增 DSH 适配器清单/状态测试 |
+
+> 工具包 `tools/data-forge/0.2.1/.gitignore` 是已发布版本内的历史注释，按版本不可变规则
+> 未修改；全仓 grep 检查时可把它与 `docs/`、`photoshop/references/` 一并视为历史资料。
 
 ---
 
@@ -373,7 +388,7 @@ class VibeStackService extends Service {
 | P2-9 | skill rank 硬编码 250 | `lib/skills.js` `SKILL_RANK` | 提为配置 `skillRank`（默认 250），便于与用户自定义 skill 根排序 |
 | P2-10 | resolver 不校验命令名语法 | `resolve.py` 只校验非空 | 在 resolver 增加 `name` 语法与长度校验（warn 并跳过），避免坏名字穿过到 adapter |
 
-### 8.3 本次已处理（R7–R10 相关）
+### 8.3 本次已处理（R1、R7–R10 相关）
 
 | 条目 | 处理结果 |
 | --- | --- |
@@ -386,6 +401,7 @@ class VibeStackService extends Service {
 | R8 group-forge | Core 移除 6 个 `custom-*` 技能；新领域组 `group-forge` 增加 `custom-group`、规则、`Hephaestus` Agent 与 `group-new` / `group-validate` 命令 |
 | R9 并集列表 | 名册每行带 `group`（projection v3）；Agent 菜单显示来源组；命令、技能按并集发布 |
 | R10 子会话并集 | 子 Agent 会话沿用同一 preset 与 `agent/pre-step`，按同一份 Core + 工作区计划生成名册；新增回归测试 |
+| P2-8 `plugin install` | CLI 的 `plugin install` 退场；`plugin list/status` 仅做自省；OpenCode 适配器删除 |
 
 未处理（仍待后续里程碑）：P1-4（`Config` schema）、P1-5（根级 `ctx.vibestack` 服务）、P2-1（`createUserMessage` 复制）、P2-10（resolver 命令名校验）。
 
@@ -535,13 +551,14 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | **M7** Core 常驻 + 并集 | resolve `--mode vibestack` / v2 `mode`；插件 `resolveMode`；`planUsable`；命名空间命令与技能；跨工作区校验；roster `group` | 无 stack 的目录仍有 Core；Agent / 命令 / 技能为 Core + 工作区并集；旧短名不再注册 |
 | **M8** group-forge 拆组 | 6 个 `custom-*` 移出 Core；新增 `custom-group`、规则、`Hephaestus`、2 个命令；仓库 `stack.json` 激活 | `vibe-stack resolve --mode vibestack` 在仓库根目录无告警；Core 不含 `custom-*` |
 | **M9** 子会话并集 | 同一 preset 下的子会话按同一份计划生成名册；不同 cwd 按子目录解析 | 父/子会话同 cwd 名册一致；子会话不写自有事件 |
+| **M10** OpenCode 退场 | 删除 `plugins/opencode/`；CLI `plugin install` 退场；README / AGENTS / architecture / plugins README 改写；能力组文案清理 | `plugins/` 只剩 `dsh`；除历史资料外无 OpenCode 引用 |
 
 后续里程碑（模型中间层等，仍未实施）：
 
 | 里程碑 | 范围 | 验收 |
 | --- | --- | --- |
 | **M0** 事实探针（0.5–1 天） | ① `conversation.input.model` 能否被第三方单例注册覆盖/共存；② `sessionController.selectModel` 在命令 handler 中对"随后 `followup` 的回合"是否生效；③ 用户 `/skill` 触发的 pre-step 中 `selectModel` 是否影响同回合；④ 设置页 Fetch 路由读写 | 四项有结论；③ 若只能下次回合生效，文档与实现按"次回合"写死 |
-| **M1** OpenCode 退场 + resolve v2 剩余字段 | §4 清单、Python `model` 字段、CLI `plugin` 命令收敛 | 全仓 `grep -i opencode` 只剩历史参考资料；`resolve --json` 输出 v2 且有 `model`（`mode` 已在 M7 完成） |
+| **M1** resolve v2 剩余字段 | Python `model` 字段、`--api-version 1` 回退 | `resolve --json` 输出 v2 且有 `model`（`mode` 已在 M7 完成；OpenCode 退场已在 M10 完成） |
 | **M2** 命名空间 + 命令语义 | `lib/names.js`、命令注册、skill 改名、`followup`、跨项目校验、失败码（已在 M7 完成） | 旧短名不再注册；两个能力组的同名命令不冲突；命令在正确项目才执行 |
 | **M3** 模型层核心 | `ctx.vibestack` service、层文件读写、`Config`、设置页 | HNFlow 能 `ctx.get('vibestack').resolveLayer('strong')`；坏配置不拖垮会话 |
 | **M4** 会话选择器 | `conversation.input.model` 替换（或 additive 回落）、层派生、默认层 | VibeStack 会话显示层名；切换后实际请求路由改变；切到其他模式恢复原生 |
@@ -835,7 +852,8 @@ primary/all，命令与技能是同一份 canonical 并集。不需要额外工�
 | 插件 | `resolveMode` / `namePrefix` / `maxCommandNameLength` / `skillRank`；`lib/names.js`、`lib/plan.js`；canonical 命令与技能；`followup`；当前工作区校验；roster `group`（projection v3） |
 | 客户端 | Agent 菜单显示来源组与并集说明 |
 | 文档 | 本文件、`AGENTS.md`、根 `README.md`、`plugins/README.md`、`plugins/dsh/README.md`、`docs/resolve-api.md`、`docs/architecture.md`、插件自带 skill |
-| 测试 | Python `tests/test_resolve.py`、`tests/test_cli.py`、`tests/test_group_forge.py`；Node `test/names.test.js`、`test/plan.test.js`、`test/commands.test.js`、`test/skills.test.js`、`test/agents.test.js`、`test/resolve.test.js`、`test/plugin.test.js` |
+| OpenCode 退场 | `plugins/opencode/` 删除；CLI `plugin install` 移除；`plugin list/status` 保留自省；能力组文案清理 |
+| 测试 | Python `tests/test_resolve.py`、`tests/test_cli.py`、`tests/test_group_forge.py`、`tests/test_plugin.py`；Node `test/names.test.js`、`test/plan.test.js`、`test/commands.test.js`、`test/skills.test.js`、`test/agents.test.js`、`test/resolve.test.js`、`test/plugin.test.js` |
 
 验证命令：
 
@@ -874,7 +892,7 @@ vibe-stack resolve --json --mode vibestack --project .
 | 不能写自定义会话事件（未知类型不可读） | 既有踩坑记录 |
 | 插件 Config 用 schemastery `z.object` 导出 `Config` | `dsh-tool-subagent` 等包约定 |
 
-## 附录 B：OpenCode 引用清单（删除/改写）
+## 附录 B：OpenCode 引用清单（已执行，2026-11-07）
 
 | 文件 | 行/段 | 动作 |
 | --- | --- | --- |
@@ -883,11 +901,14 @@ vibe-stack resolve --json --mode vibestack --project .
 | `README.md` | 安装、项目部署、Agent 插件、CLI、开发 | 重写为 DSH |
 | `plugins/README.md` | §2、§6、§7、§9、§10 | 示例换 `dsh`；删 OpenCode 映射表；安装段改 `dsh plugin add` |
 | `docs/architecture.md` | §7 与 OpenCode 适配 | 改为 DSH 适配 |
-| `capability-groups/**/SKILL.md` | `compatibility: opencode`（5 处） | 删字段或改 `dsh` |
+| `capability-groups/**/SKILL.md` | `compatibility: opencode`（4 处） | 删字段或改 `dsh` |
 | `data-forge/SKILL.md` | 「OpenCode 插件自动加载」 | 改「DSH 插件挂载」 |
 | `sisyphus.md` | 「OpenCode AI 编排器」 | 改「AI 编排器」 |
 | `photoshop/references/方案.md` | 全文 | 标注历史资料，不改内容 |
 | CLI `plugin install` / `plugin status` 文档 | §7 | 收敛为自省或不出现 |
+
+执行结果：以上条目均已处理；`photoshop/references/方案.md` 与 `docs/` 中的 OpenCode 字样属于
+历史资料。`tools/data-forge/0.2.1/.gitignore` 的注释按“已发布版本不可修改”保留。
 
 ## 附录 C：命名对照
 

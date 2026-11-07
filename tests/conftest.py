@@ -111,22 +111,17 @@ def repo(tmp_path: Path) -> Path:
         )
 
     _write_json(
-        root / "plugins/opencode/plugin.json",
+        root / "plugins/dsh/plugin.json",
         {
             "schema_version": 1,
-            "name": "opencode",
-            "agent": "opencode",
-            "version": "0.2.0",
-            "entrypoint": "index.ts",
-            "install": {
-                "kind": "copy",
-                "target": "~/.config/opencode/plugins/vibestack.ts",
-                "skills_target": "~/.config/opencode/plugins/vibestack-skills",
-            },
+            "name": "dsh",
+            "agent": "dsh",
+            "version": "0.3.0",
+            "entrypoint": "index.js",
+            "capabilities": ["rules", "skills", "commands", "mcp", "agents"],
         },
     )
-    _write(root / "plugins/opencode/index.ts", "export const Plugin = async () => ({})\n")
-    _write(root / "plugins/opencode/skills/vibestack/SKILL.md", "# guide\n")
+    _write(root / "plugins/dsh/index.js", "export const apply = () => {}\n")
     return root
 
 

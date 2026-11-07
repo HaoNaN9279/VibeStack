@@ -10,7 +10,7 @@ from pathlib import Path
 from vibe_stack import __version__
 from vibe_stack.errors import VibeStackError
 from vibe_stack.loader import discover_groups, discover_tools, load_group
-from vibe_stack.plugin import discover_plugins, install as install_plugin, status as plugin_status
+from vibe_stack.plugin import discover_plugins, status as plugin_status
 from vibe_stack.project import (
     activate,
     deactivate,
@@ -112,8 +112,6 @@ def build_parser() -> argparse.ArgumentParser:
     plugin = sub.add_parser("plugin", help="agent plugin adapters")
     plugin_sub = plugin.add_subparsers(dest="plugin_command", required=True)
     plugin_sub.add_parser("list", help="list adapters")
-    plugin_install = plugin_sub.add_parser("install", help="install an adapter")
-    plugin_install.add_argument("agent")
     plugin_status_parser = plugin_sub.add_parser("status", help="adapter status")
     plugin_status_parser.add_argument("agent")
 
@@ -314,20 +312,17 @@ def _plugin(repo: Path, args: argparse.Namespace) -> int:
         for manifest in discover_plugins(repo):
             print(f"{manifest.get('agent')}@{manifest.get('version')}  {manifest.get('root')}")
         return 0
-    if args.plugin_command == "install":
-        for path in install_plugin(repo, args.agent):
-            print(f"installed: {path}")
-        config = read_global_config()
-        config["repository"] = str(repo.resolve())
-        write_global_config(config)
-        return 0
     if args.plugin_command == "status":
         data = plugin_status(repo, args.agent)
         print(f"agent: {data['agent']}")
         print(f"version: {data['version']}")
-        print(f"target: {data['target']}")
-        print(f"installed: {data['installed']}")
-        print(f"skills: {data['skills_target']} ({data['skills_installed']})")
+        print(f"source: {data['source']}")
+        if data["target"]:
+            print(f"target: {data['target']}")
+            print(f"installed: {data['installed']}")
+            print(f"skills: {data['skills_target']} ({data['skills_installed']})")
+        else:
+            print("install: external (dsh plugin add)")
         return 0
     raise VibeStackError(f"unknown plugin command: {args.plugin_command}")
 

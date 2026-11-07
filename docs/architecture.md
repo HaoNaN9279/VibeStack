@@ -166,11 +166,17 @@ mcp["vibe:<group>_<server>"]
 
 ## 7. Agent 插件
 
+当前唯一适配器是 DeepSeek Harness：
+
 ```text
-plugins/<agent>/
-├── plugin.json
-├── index.ts
-└── skills/
+plugins/dsh/
+├── plugin.json          # 适配器清单（无复制式 install 字段）
+├── package.json         # DSH bundle patch + client
+├── cordis.patch.yml     # 只 insert：UI 行 + preset-vibestack
+├── index.js             # 宿主半
+├── client.js            # 浏览器半
+├── lib/                 # resolve / 规则 / 技能 / 命令 / 投影 / MCP
+└── skills/vibestack/    # 插件自带技能
 ```
 
 `plugin.json`：
@@ -178,27 +184,29 @@ plugins/<agent>/
 ```json
 {
   "schema_version": 1,
-  "name": "opencode",
-  "agent": "opencode",
-  "version": "0.2.0",
-  "entrypoint": "index.ts",
-  "install": {
-    "kind": "copy",
-    "target": "~/.config/opencode/plugins/vibestack.ts",
-    "skills_target": "~/.config/opencode/plugins/vibestack-skills"
-  },
-  "capabilities": ["rules", "agents", "commands", "skills", "mcp", "tools"]
+  "name": "dsh",
+  "agent": "dsh",
+  "version": "0.3.0",
+  "entrypoint": "index.js",
+  "capabilities": ["rules", "agents", "commands", "skills", "mcp"]
 }
 ```
 
-安装只复制文件。禁止修改 Agent 的主配置文件。
+安装由 DSH 完成：
 
-### OpenCode 适配
+```bash
+dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
+```
+
+`vibe-stack plugin install` 已退场；`vibe-stack plugin list/status` 只做适配器自省。
+插件不得修改 Agent 主配置或用户 profile 组合。
+
+### DSH 适配
 
 插件只调用：
 
 ```bash
-vibe-stack resolve --json --project <project>
+vibe-stack resolve --json --mode vibestack --project <project>
 ```
 
 插件不读取能力组目录、不解析 frontmatter，也不实现版本选择、`extends`、
@@ -207,26 +215,30 @@ MCP 配置。
 
 插件只负责：
 
-- v1/v2 配置字段映射
-- 与目标侧现有配置合并
+- 把规则注入为持久 `<system-reminder>` 消息
+- 把 Agent 名册发布为会话投影，驱动左下角菜单与 persona 段落
+- 把命令/技能映射为 `vibestack-<group>-<name>`，命令模板以 `followup()` 投递
+- 按能力组工具引用动态挂载 MCP 子插件
 - 保留用户已有的 `model`、`temperature`、`permission`
 - 告警记录和失败开放
 
-| VibeStack 计划 | OpenCode v1 | OpenCode v2 |
-|---|---|---|
-| rules | `config.instructions` | `config.instructions` |
-| skills | `config.skills.paths` | `config.skills` 数组 |
-| agents | `config.agent` | `config.agents` |
-| commands | `config.command` | `config.commands` |
-| mcp | `config.mcp` | `config.mcp` |
+| VibeStack 计划 | DSH 机制 |
+|---|---|
+| rules | `agent/pre-step` 注入持久用户消息 |
+| skills | `ctx.skills.registerProvider('vibestack')` |
+| agents | 会话投影 + 系统提示词人设段 + 左下角菜单 |
+| commands | `ctx.commands.register()` + `followup()` |
+| mcp | 每台服务器挂载 `@deepseek-ai/dsh-mcp-client` 子插件 |
 
 失败处理：
 
 - CLI 缺失、超时、非零退出、JSON 或 schema 不合法：只加载插件默认技能并告警。
 - `resolve` 已跳过的坏项通过 `warnings` 返回，插件记录后继续启动。
+- MCP 挂载失败不阻断规则、技能、命令与名册注入。
 - 插件不得写入项目、能力组、工具包或 Agent 主配置。
 
-详细契约见 `docs/resolve-api.md`。
+详细契约见 [`resolve-api.md`](resolve-api.md) 与
+[`dsh-plugin-plan.md`](dsh-plugin-plan.md)。
 
 ## 8. 全局配置
 
@@ -257,7 +269,7 @@ MCP 配置。
 | `sync` | 严格解析并写 `lock.json` |
 | `resolve --json` | 生成只读注入计划，供插件消费 |
 | `tool list/run/serve/exec` | 工具入口 |
-| `plugin install/status/list` | 适配器安装 |
+| `plugin status/list` | 适配器自省（安装由 `dsh plugin add` 负责） |
 
 ## 10. 迁移来源
 

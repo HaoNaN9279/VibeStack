@@ -40,8 +40,8 @@ dsh --profile vstest --port 8799 --no-open
 本插件只把 `@deepseek-ai/dsh-mcp-client` 声明为可选 peer，解析不到时 MCP 能力降级为
 一条告警，其余能力不受影响。
 
-`vibe-stack plugin install dsh` 不适用：本适配器没有声明 `install` 字段，安装动作由
-`dsh plugin add` 完成（`vibe-stack plugin list` 仍能发现它）。
+`vibe-stack plugin install` 已退场：本适配器没有声明 `install` 字段，安装动作由
+`dsh plugin add` 完成（`vibe-stack plugin list/status` 仍能做适配器自省）。
 
 卸载：
 

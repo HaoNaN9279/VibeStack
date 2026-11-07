@@ -1,13 +1,16 @@
-"""Agent plugin adapters: discovery and installation."""
+"""Agent plugin adapters: discovery and status.
+
+DSH installs adapters itself (``dsh plugin add``), so VibeStack no longer
+copies adapter files. This module only discovers manifests and reports what
+the adapter declares.
+"""
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from vibe_stack.errors import PluginNotFoundError, VibeStackError
 from vibe_stack.model import read_json
-from vibe_stack.repo import read_global_config, write_global_config
 
 
 def plugins_dir(repo: Path) -> Path:
@@ -40,41 +43,12 @@ def load_plugin(repo: Path, agent: str) -> tuple[dict[str, object], Path]:
     return read_json(manifest), root
 
 
-def install(repo: Path, agent: str) -> list[Path]:
-    """Install a plugin adapter for *agent*.
-
-    Only file copies into the agent's plugin directory are performed.
-    The agent's main configuration file is never modified.
-    """
-    manifest, root = load_plugin(repo, agent)
-    entrypoint = str(manifest.get("entrypoint", ""))
-    if not entrypoint or not (root / entrypoint).is_file():
-        raise PluginNotFoundError(f"plugin '{agent}' entrypoint is missing")
-
-    install_data = manifest.get("install")
-    if not isinstance(install_data, dict):
-        raise PluginNotFoundError(f"plugin '{agent}' has no install target")
-    target = _expand(str(install_data.get("target", "")))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(root / entrypoint, target)
-
-    written = [target]
-    skills = root / "skills"
-    skills_target_raw = install_data.get("skills_target")
-    if skills.is_dir() and isinstance(skills_target_raw, str) and skills_target_raw:
-        skills_target = _expand(skills_target_raw)
-        shutil.copytree(skills, skills_target, dirs_exist_ok=True)
-        written.append(skills_target)
-
-    config = read_global_config()
-    config["schema_version"] = 1
-    config["repository"] = str(repo.resolve())
-    write_global_config(config)
-    return written
-
-
 def status(repo: Path, agent: str) -> dict[str, object]:
-    """Return installation status for one plugin adapter."""
+    """Return the declared status of one plugin adapter.
+
+    DSH owns installation, so ``target``/``installed`` are meaningful only for
+    legacy copy-based manifests; for DSH manifests they stay empty/false.
+    """
     manifest, root = load_plugin(repo, agent)
     install_data = manifest.get("install")
     target_raw = install_data.get("target") if isinstance(install_data, dict) else None

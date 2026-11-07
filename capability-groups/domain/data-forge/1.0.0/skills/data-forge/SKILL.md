@@ -12,7 +12,7 @@ data-forge 是一套可组合的 AI 训练数据集构建工具，覆盖从图�
 工具代码位于 `tools/data-forge/0.2.1/`，统一通过 `vibe-stack` 调用：
 
 ```bash
-# 启动 MCP（通常由 OpenCode 插件自动加载）
+# 启动 MCP（由 DSH VibeStack 插件按能力组的工具引用挂载）
 vibe-stack tool serve data-forge
 
 # 在工具环境中执行模块

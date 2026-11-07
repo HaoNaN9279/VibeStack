@@ -5,7 +5,7 @@ description: 生成常见操作的 Photoshop ExtendScript/UXP 代码模板：图
 
 # `/photoshop-generate` — Photoshop 代码生成
 
-生成常见操作的 Photoshop ExtendScript/UXP 代码模板。封装了来自方案.md 第 2.2 节的 `opencode generate photoshop-*` 调用。
+生成常见操作的 Photoshop ExtendScript/UXP 代码模板。封装了来自方案.md 第 2.2 节的 Photoshop 命令调用。
 
 ## 用法
 

@@ -45,7 +45,7 @@ capability-groups/domain/<name>/<version>/
 - 能力组内**不创建** `tools/`、`mcp/`、`pyproject.toml` 或工具源码。
 - MCP 是工具包的一种 provider，放在仓库根部 `tools/<name>/<version>/tool.json`，由 `group.json` 的 `tools` 引用。
 - 不写 Agent 的模型、温度、权限；这些属于运行时配置。
-- 不把内容复制到 `.opencode/`、`.dsh/` 等 Agent 私有目录。
+- 不把内容复制到 `.dsh/` 等 Agent 私有目录。
 
 ---
 

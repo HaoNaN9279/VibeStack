@@ -15,8 +15,10 @@ Agent 的主配置文件。解析契约见 [`../docs/resolve-api.md`](../docs/re
 ```text
 plugins/<agent>/
 ├── plugin.json        # 适配器清单
-├── index.ts           # 入口
-├── index.test.ts      # 可选测试
+├── index.js           # 宿主入口（DSH）
+├── client.js          # 可选：浏览器入口（DSH）
+├── package.json       # 可选：Agent 包清单（DSH）
+├── cordis.patch.yml   # 可选：Agent 组合补丁（DSH）
 └── skills/            # 可选默认技能
     └── <skill-name>/
         └── SKILL.md
@@ -29,16 +31,11 @@ plugins/<agent>/
 ```json
 {
   "schema_version": 1,
-  "name": "opencode",
-  "agent": "opencode",
-  "version": "0.2.0",
-  "entrypoint": "index.ts",
-  "install": {
-    "kind": "copy",
-    "target": "~/.config/opencode/plugins/vibestack.ts",
-    "skills_target": "~/.config/opencode/plugins/vibestack-skills"
-  },
-  "capabilities": ["rules", "agents", "commands", "skills", "mcp", "tools"]
+  "name": "dsh",
+  "agent": "dsh",
+  "version": "0.3.0",
+  "entrypoint": "index.js",
+  "capabilities": ["rules", "agents", "commands", "skills", "mcp"]
 }
 ```
 
@@ -49,19 +46,18 @@ plugins/<agent>/
 | `agent` | 是 | 目标 Agent 名称，与目录名一致 |
 | `version` | 是 | 适配器版本 |
 | `entrypoint` | 是 | 入口文件，相对于插件目录 |
-| `install.kind` | 是 | 当前只支持 `copy` |
-| `install.target` | 是 | 入口文件安装路径，支持 `~` |
-| `install.skills_target` | 否 | 默认技能安装目录，支持 `~` |
 | `capabilities` | 是 | 适配器支持的能力列表 |
 
 声明为支持的能力必须实现；不支持的能力必须明确告警并跳过。
+
+DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeStack 不做复制式安装。
 
 ## 3. 运行契约
 
 - 启动时调用 `vibe-stack resolve --json [--mode vibestack] --project <project>`。
 - `vibe-stack` 必须已安装并在 `PATH` 中；自定义路径使用 `VIBESTACK_CLI`。
 - 调用超时默认 5 秒，可用 `VIBESTACK_RESOLVE_TIMEOUT_MS` 覆盖。
-- 一次启动只解析一次，`config` hook 只应用缓存结果。
+- 一次启动只解析一次，之后复用缓存结果。
 - `stdout` 只按 UTF-8 解析 JSON；`stderr` 用于诊断。
 - 校验 `schema_version`；不兼容时只加载默认技能并告警。
 - 无 `.vibestack/stack.json` 时：`project` 模式使用 `active=false` 的结果，不加载 Core；
@@ -74,8 +70,7 @@ plugins/<agent>/
 - 插件不得引入第三方运行时依赖。
 - 配置变化后由 Agent 重启重新加载，不要求插件常驻监听文件。
 
-默认技能只来自插件自身的 `skills/` 或安装后的 `vibestack-skills/`。能力组
-技能由 `resolve` 返回路径，插件不读取其内容。
+默认技能只来自插件自身的 `skills/`。能力组技能由 `resolve` 返回路径，插件不读取其内容。
 
 ## 4. 职责边界
 
@@ -153,39 +148,27 @@ plugins/<agent>/
 - 命令与技能统一发布为 `vibestack-<group>-<name>`；Agent 保留原名并带 `group` 展示。
 - 命令 handler 在执行前校验当前工作区计划，领域组命令不会跨项目执行。
 - 子 Agent 会话继承同一 preset，按同一份并集生成名册。
-
-### OpenCode
-
-| VibeStack 计划 | OpenCode v1 | OpenCode v2 |
-|---|---|---|
-| rules | `config.instructions` | `config.instructions` |
-| skills | `config.skills.paths` | `config.skills` 数组 |
-| agents | `config.agent` | `config.agents` |
-| commands | `config.command` | `config.commands` |
-| mcp | `config.mcp` | `config.mcp` |
-
-其他适配器参考此表实现等价映射，但不得把 OpenCode 字段名当作通用规范。
+- 详细实现见 [`dsh/README.md`](dsh/README.md)。
 
 ## 7. 安装与发布
 
+DSH 自行管理插件安装：
+
 ```bash
-vibe-stack plugin list
-vibe-stack plugin install <agent>
-vibe-stack plugin status <agent>
+dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
+dsh plugin --profile desktop remove dsh-vibestack
 ```
 
-安装行为：
+`vibe-stack plugin install` 已退场；CLI 只做适配器自省：
 
-- `plugin install` 读取 `plugin.json`，复制 `entrypoint` 到 `install.target`。
-- 存在 `skills/` 且配置了 `skills_target` 时，复制默认技能。
-- 只复制文件，不修改 Agent 主配置。
-- 安装后把当前仓库路径写入全局配置 `~/.config/vibestack/config.json`。
-- 重新安装覆盖入口文件和默认技能。
+```bash
+vibe-stack plugin list          # 发现 plugins/*/plugin.json
+vibe-stack plugin status dsh    # 显示清单声明的版本与入口
+```
 
-插件发现：
-
-- CLI 自动发现 `plugins/*/plugin.json`，不需要修改注册表。
-- 运行时由 `vibe-stack resolve` 根据全局配置和环境变量定位仓库。
+- 本地目录以 `link:` 安装，改插件源码后重启 DSH 即可。
+- 不复制文件到 Agent 插件目录，不修改 Agent 主配置。
+- `vibe-stack resolve` 根据全局配置和环境变量定位仓库，供插件运行时调用。
 
 ## 8. 验收清单
 
@@ -212,24 +195,22 @@ vibe-stack plugin status <agent>
 uv run pytest -q
 node plugins/dsh/test/agents.test.js
 node plugins/dsh/test/plugin.test.js
-# DSH 的其余测试文件逐个运行，见 plugins/dsh/README.md
-cd plugins/opencode && bun test
+# DSH 的其余测试文件逐个运行，见 dsh/README.md
 ```
 
-无 `bun` 的环境可用 Node `--experimental-strip-types` 做入口加载和映射验证；
 提交前至少完成一次解析 API 的真实 CLI 调用验证。
 
 ## 10. 新增适配器步骤
 
 ```text
 1. 创建 plugins/<agent>/
-2. 编写 plugin.json，声明 entrypoint、安装路径和支持的能力
+2. 编写 plugin.json，声明 entrypoint 和支持的能力
 3. 实现 resolve CLI 调用、schema 校验和失败开放
 4. 按目标 Agent 的配置机制实现注入计划映射
 5. 添加默认技能 skills/vibestack/SKILL.md
 6. 编写测试，覆盖 API 成功、损坏 JSON、schema 不兼容、超时和幂等
-7. 执行 vibe-stack plugin install <agent> 并验证 status
+7. 按目标 Agent 的安装方式安装并验证；DSH 使用 dsh plugin add
 8. 在无 stack、有 stack、坏组和 CLI 缺失场景下手动验证
 ```
 
-当前适配器：`opencode`。
+当前适配器：`dsh`。

@@ -1,6 +1,7 @@
 # VibeStack
 
-面向多种 AI Agent 工具的能力组与工具包仓库。
+面向 AI Agent 工具的能力组与工具包仓库。当前 Agent 适配器是
+[DeepSeek Harness](plugins/dsh/README.md)。
 
 ## 目录结构
 
@@ -30,9 +31,13 @@ VibeStack/
 │           ├── tool.json
 │           └── ...
 ├── plugins/
-│   └── <agent-name>/
+│   └── dsh/
 │       ├── plugin.json
-│       └── index.ts
+│       ├── package.json
+│       ├── cordis.patch.yml
+│       ├── index.js
+│       ├── client.js
+│       └── skills/
 ├── src/vibe_stack/
 └── tests/
 ```
@@ -59,10 +64,15 @@ Core 使用 `core/<version>/group.json`，领域能力组使用 `domain/<group-n
 - `guid` 在所有版本中保持不变。
 - `name`、`version` 必须与目录名一致。
 - `extends` 引用其他能力组名称，依赖先加载。
-- Core 位于 `capability-groups/core/`，随 `.vibestack/stack.json` 加载。
+- Core 位于 `capability-groups/core/`：`project` 模式下随 `.vibestack/stack.json` 加载；
+  DSH 的 `vibestack` 模式下无条件加载。
 - 领域能力组位于 `capability-groups/domain/`，只在 `groups` 中列出时加载。
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`。
 - 能力组内不放 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
+
+能力组开发由领域组 `group-forge` 提供；在 VibeStack 仓库根目录的
+`.vibestack/stack.json` 中已激活它。详见
+[`group-forge`](capability-groups/domain/group-forge/0.1.0/group.json)。
 
 ## 工具包
 
@@ -109,29 +119,29 @@ vibe-stack tool exec <tool> -- python -m <module>
 ## 安装
 
 ```bash
-# 1. 全局安装 CLI，供插件和工具调用
+# 1. 全局安装 CLI，供 DSH 插件和工具调用
 uv tool install --from . vibe-stack
 
-# 2. 安装 OpenCode 插件
-vibe-stack plugin install opencode
+# 2. 把 DSH 适配器装进当前 profile（本地 link: 安装）
+dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
 
 # 3. 在项目中初始化并激活能力组
 cd my-project
 vibe-stack init
 vibe-stack activate data-forge blender
 
-# 4. 重启 OpenCode
+# 4. 重启 DeepSeek Harness
 ```
 
-插件运行依赖 PATH 中的 `vibe-stack`。升级本仓库后需重新执行
-`uv tool install --from . vibe-stack` 和 `vibe-stack plugin install opencode`。
+DSH 适配器只读写自己的运行态，不复制文件到 Agent 私有目录。插件源码在
+`plugins/dsh/`，本地 `link:` 安装后修改源码只需重启 DSH；升级本仓库后重新执行
+`uv tool install --from . vibe-stack` 即可更新 CLI。
 
-`plugin install` 只写 `~/.config/vibestack/config.json` 和
-`~/.config/opencode/plugins/`，不修改 `opencode.json`。
+安装与卸载细节见 [`plugins/dsh/README.md`](plugins/dsh/README.md)。
 
 ## 项目部署
 
-项目不再复制或链接内容到 `.opencode/`。激活能力组只写项目配置：
+项目只写 `.vibestack/`，不复制或链接内容到 `.dsh/` 等 Agent 私有目录：
 
 ```text
 <project>/.vibestack/
@@ -145,13 +155,14 @@ vibe-stack activate data-forge blender
 {
   "schema_version": 1,
   "core": { "name": "core", "version": "0.1.0" },
-  "agents": ["opencode"],
   "groups": [
     { "name": "data-forge", "version": "1.0.0" },
     { "name": "blender", "version": "1.0.0" }
   ]
 }
 ```
+
+`agents` 字段已废弃；resolver 继续接受但忽略，下一版 stack schema 再删除。
 
 加载顺序：
 
@@ -168,42 +179,48 @@ DeepSeek Harness 的 VibeStack 模式使用 `--mode vibestack`：**Core 无条�
 
 ## Agent 插件
 
-插件统一放在 `plugins/<agent>/`：
+DSH 适配器在 `plugins/dsh/`：
 
 ```text
-plugins/opencode/
-├── plugin.json
-├── index.ts
-└── skills/vibestack/SKILL.md
+plugins/dsh/
+├── plugin.json          # 适配器清单
+├── package.json         # DSH bundle patch + client
+├── cordis.patch.yml     # 只 insert：UI 行 + `preset-vibestack` 模式
+├── index.js             # 宿主半
+├── client.js            # 浏览器半（Agent 菜单）
+├── lib/                 # resolve / 规则 / 技能 / 命令 / 投影 / MCP
+└── skills/vibestack/    # 插件自带技能
 ```
 
-OpenCode 插件启动时调用：
+插件启动时调用：
 
 ```bash
-vibe-stack resolve --json --project <project>
+vibe-stack resolve --json --mode vibestack --project <project>
 ```
 
-插件只把解析计划映射到 `config` hook，不自行扫描能力组、选择版本或解析
-frontmatter。`vibe-stack` 必须已安装并在 `PATH` 中。
+插件只消费解析计划，把规则、技能、命令、MCP 与 Agent 人设映射到 DSH 会话；不自行扫描
+能力组、选择版本或解析 frontmatter。`vibe-stack` 必须已安装并在 `PATH` 中。
 
-| 解析计划 | OpenCode v1 | OpenCode v2 |
-|---|---|---|
-| `rules` | `instructions` | `instructions` |
-| `agents` | `agent` | `agents` |
-| `commands` | `command` | `commands` |
-| `skills` | `skills.paths` | `skills` 数组 |
-| `mcp` | `mcp` | `mcp` |
+| 解析计划 | DSH 机制 |
+|---|---|
+| `rules` | `agent/pre-step` 注入持久 `<system-reminder>` 消息 |
+| `skills` | `ctx.skills.registerProvider('vibestack')`，名称 `vibestack-<group>-<name>` |
+| `agents` | 会话投影 + 左下角 Agent 菜单；人设段落 |
+| `commands` | `ctx.commands.register()`，模板渲染后 `followup()` |
+| `mcp` | 按工具包挂载 `@deepseek-ai/dsh-mcp-client` 子插件 |
 
-插件默认加载 `vibestack` 技能，指导 Agent 使用本仓库。解析契约见
-[`docs/resolve-api.md`](docs/resolve-api.md)。
+解析契约见 [`docs/resolve-api.md`](docs/resolve-api.md)，插件细节见
+[`plugins/dsh/README.md`](plugins/dsh/README.md)。
 
 安装：
 
 ```bash
-vibe-stack plugin install opencode
+dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
+vibe-stack plugin list
+vibe-stack plugin status dsh
 ```
 
-插件复制到 `~/.config/opencode/plugins/`，不修改 `opencode.json`。
+`vibe-stack plugin install` 已退场：DSH 自己负责安装，CLI 只做适配器自省。
 
 ## CLI
 
@@ -215,13 +232,13 @@ vibe-stack init
 vibe-stack activate <group>[@version]
 vibe-stack deactivate <group>
 vibe-stack sync
-vibe-stack resolve --json
+vibe-stack resolve --json [--mode project|vibestack]
 vibe-stack tool list
 vibe-stack tool run <tool> -- <args>
 vibe-stack tool serve <tool>
 vibe-stack tool exec <tool> -- <command>
-vibe-stack plugin install opencode
-vibe-stack plugin status opencode
+vibe-stack plugin list
+vibe-stack plugin status <agent>
 ```
 
 ## 版本规则
@@ -235,7 +252,9 @@ vibe-stack plugin status opencode
 ```bash
 uv sync
 uv run pytest -q
-cd plugins/opencode && bun test
+node plugins/dsh/test/agents.test.js
+node plugins/dsh/test/plugin.test.js
+# DSH 其余测试文件逐个运行，见 plugins/dsh/README.md
 ```
 
 ## 许可证
