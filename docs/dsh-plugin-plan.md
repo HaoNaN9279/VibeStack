@@ -8,7 +8,7 @@
 | 插件 | `dsh-vibestack`（`D:\workspace\VibeStack\plugins\dsh`，本地 `dsh plugin add` 安装） |
 | 范围 | 只自用：不发布 npm、不上架插件市场、不走 DSH 官方验证/审核流程 |
 | 关联 | HNFlow 插件（`dsh-hnflow`）**强依赖**本插件；本插件不知道 HNFlow 存在（单向依赖） |
-| 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§7（层服务/设置页/选择器，含可选 `replace`）、§9 根级 core 行、§16–§19 与 §8.3 已实施；剩余为 schemastery `Config` 与 GUI 手工验收 |
+| 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§7（层服务/设置页/选择器，含可选 `replace`）、§9 根级 core 行、§16–§19 与 §8.3 已实施；剩余主要是 GUI 手工验收 |
 
 ---
 
@@ -413,10 +413,11 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | P2-8 `plugin install` | CLI 的 `plugin install` 退场；`plugin list/status` 仅做自省；OpenCode 适配器删除 |
 | P1-5 根级服务 | `vibestack-core` 行用 `ctx.provide('vibestack', service)` 注册模型层服务；preset 行通过 `ctx.get('vibestack')` 消费 |
 | P2-1 `createUserMessage` | 优先通过 `loadHarnessModule('@deepseek-ai/dsh-llm')` 使用 harness 工厂；不可用时回退本地实现（测试路径） |
+| P1-4 `Config` schema | 动态加载 `@deepseek-ai/schemastery` 并导出可选 `Config`；普通 Node 测试/降级组合下 schema 缺失，继续用 `resolveConfig()` |
 | 模型层 | `lib/layers.js` / `lib/service.js` / `lib/models-route.js`；设置页；`vibestack-layer` 命令；agent / command / skill 三处应用；默认层 |
 | 模型层 UI | 默认 `conversation.input.left` 的 `◈` 增量控件；可选 `modelSelector: replace` 用 priority -1 遮蔽 `conversation.input.model`，非 VibeStack 会话回退原生目录 |
 
-未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、`conversation.input.model` 的完整替换。
+未处理（仍待后续里程碑）：GUI 手工验收（设置页、`replace` 模型位、`◈` 控件）。
 
 ### 8.4 不建议改的
 

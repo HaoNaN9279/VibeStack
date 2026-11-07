@@ -42,6 +42,48 @@ import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skill
 /** Plugin name shown in Loader diagnostics. */
 export const name = 'vibestack'
 
+/**
+ * Optional Config schema.
+ *
+ * The schema lives in `@deepseek-ai/schemastery`, a harness-provided package.
+ * The dynamic import keeps the module usable under plain Node tests, where the
+ * package is absent; the Loader resolves it in a real DSH composition.
+ * @type {object | undefined}
+ */
+let Config
+try {
+  const schemastery = await import('@deepseek-ai/schemastery')
+  const z = schemastery.default?.z ?? schemastery.z ?? schemastery.default
+  if (z && typeof z.object === 'function') {
+    Config = z.object({
+      role: z.string().default('preset'),
+      host: z.boolean().default(true),
+      modelsFile: z.string().default(''),
+      modelSelector: z.string().default('additive'),
+      applyModelOnAgent: z.boolean().default(true),
+      applyModelOnCommand: z.boolean().default(true),
+      applyModelOnSkill: z.boolean().default(true),
+      applyDefaultLayer: z.boolean().default(true),
+      command: z.string().default(''),
+      timeoutMs: z.number().default(5000),
+      resolveMode: z.string().default('vibestack'),
+      namePrefix: z.string().default('vibestack'),
+      maxCommandNameLength: z.number().default(48),
+      skillRank: z.number().default(250),
+      rules: z.boolean().default(true),
+      skills: z.boolean().default(true),
+      commands: z.boolean().default(true),
+      agents: z.boolean().default(true),
+      mcp: z.boolean().default(true),
+      maxRulesBytes: z.number().default(65536),
+      defaultAgent: z.string().default(''),
+    })
+  }
+} catch {
+  // Plain Node tests and degraded compositions keep the defensive resolver.
+}
+export { Config }
+
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PERSONA_SECTION_ORDER = 10150
 const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
