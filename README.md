@@ -222,6 +222,13 @@ vibe-stack plugin status dsh
 
 `vibe-stack plugin install` 已退场：DSH 自己负责安装，CLI 只做适配器自省。
 
+### 模型层
+
+能力组只写 `model: <layer>`；层的 provider/model/reasoningEffort 保存在
+`~/.config/vibestack/config.json` 的 `models` 段，由 DSH 插件读取。设置页
+「VibeStack 模型层」可增删改层；输入框左下的 `◈` 菜单切换当前会话的层。
+详见 [`plugins/dsh/README.md`](plugins/dsh/README.md#模型层)。
+
 ## CLI
 
 ```bash

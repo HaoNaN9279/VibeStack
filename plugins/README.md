@@ -33,7 +33,7 @@ plugins/<agent>/
   "schema_version": 1,
   "name": "dsh",
   "agent": "dsh",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "entrypoint": "index.js",
   "capabilities": ["rules", "agents", "commands", "skills", "mcp"]
 }

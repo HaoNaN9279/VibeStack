@@ -31,10 +31,12 @@ import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
 import { createUserMessage } from './lib/messages.js'
 import { normalizeMcpEntries, syncMcpServers } from './lib/mcp.js'
+import { createModelsRoute } from './lib/models-route.js'
 import { planUsable, unusablePlanReason } from './lib/plan.js'
 import { PlanCache } from './lib/plans.js'
 import { resolvePlan as resolveProjectPlan } from './lib/resolve.js'
 import { renderRules } from './lib/rules.js'
+import { VibeStackService } from './lib/service.js'
 import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skills.js'
 
 /** Plugin name shown in Loader diagnostics. */
@@ -43,6 +45,42 @@ export const name = 'vibestack'
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
 const PERSONA_SECTION_ORDER = 10150
 const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
+/** Management command for choosing a model layer. */
+export const LAYER_COMMAND = 'vibestack-layer'
+
+/**
+ * Root row: provide `ctx.vibestack` and the model-layer settings route.
+ * @param {Record<string, unknown>} ctx - Cordis plugin context.
+ * @param {ReturnType<typeof resolveConfig>} config - resolved row config.
+ * @returns {VibeStackService} the service instance.
+ */
+export function applyCore(ctx, config) {
+  const logger = ctx.logger
+  const service = new VibeStackService({
+    ctx,
+    modelsFile: config.modelsFile,
+    logger,
+  })
+  try {
+    if (typeof ctx.provide === 'function') ctx.provide('vibestack', service)
+  } catch (error) {
+    logger?.warn?.('vibestack: cannot provide ctx.vibestack: %o', error)
+  }
+  void service.reload()
+  ctx.inject(['connection'], (scope) => {
+    try {
+      const registry = scope.connection?.fetch
+      if (typeof registry?.register !== 'function') {
+        logger?.warn?.('vibestack: no Fetch route registry; model settings stay file-only')
+        return
+      }
+      registry.register(createModelsRoute({ service }))
+    } catch (error) {
+      logger?.warn?.('vibestack: cannot register the models route: %o', error)
+    }
+  })
+  return service
+}
 
 /**
  * Register the VibeStack mode.
@@ -53,9 +91,14 @@ const MCP_CLIENT_PACKAGE = '@deepseek-ai/dsh-mcp-client'
  */
 export function apply(ctx, rawConfig, deps = {}) {
   const config = resolveConfig(rawConfig)
-  // The root row exists only so the client half is always available; it owns no
-  // host behaviour and must not touch any session.
-  if (!config.host) return
+  // UI rows own no host behaviour.
+  if (!config.host || config.role === 'ui') return
+  // The root core row provides `ctx.vibestack` and the settings route; it must
+  // not resolve projects or touch a session.
+  if (config.role === 'core') {
+    applyCore(ctx, config)
+    return
+  }
 
   const resolveFor = deps.resolvePlan ?? ((cwd) => resolveProjectPlan(cwd, config))
   const cache = new PlanCache(resolveFor)
@@ -65,13 +108,15 @@ export function apply(ctx, rawConfig, deps = {}) {
     maxLength: config.maxCommandNameLength,
     rank: config.skillRank,
   }
-  /** @type {{commands: Map<string, string>, mcpStores: Set<Map<string, {signature: string, fiber: unknown}>>, mcpModule: unknown, warned: Set<string>, sessions: WeakMap<object, {digest: string, mcp: Map<string, {signature: string, fiber: unknown}>}>}} */
+  /** @type {{commands: Map<string, string>, mcpStores: Set<Map<string, {signature: string, fiber: unknown}>>, mcpModule: unknown, warned: Set<string>, sessions: WeakMap<object, {digest: string, mcp: Map<string, {signature: string, fiber: unknown}>}>, defaults: WeakSet<object>, skills: WeakMap<object, Set<string>>}} */
   const state = {
     commands: new Map(),
     mcpStores: new Set(),
     mcpModule: null,
     warned: new Set(),
     sessions: new WeakMap(),
+    defaults: new WeakSet(),
+    skills: new WeakMap(),
   }
 
   /** @type {Record<string, Function> | undefined} */
@@ -96,6 +141,95 @@ export function apply(ctx, rawConfig, deps = {}) {
       if (state.warned.has(message)) continue
       state.warned.add(message)
       warn('vibestack: %s', message)
+    }
+  }
+
+  /**
+   * Read the root service without requiring it.
+   * @returns {VibeStackService | undefined} service when the core row is mounted.
+   */
+  const layerService = () => {
+    try {
+      return ctx.get('vibestack')
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Apply one model layer to a session.
+   *
+   * The layer only changes the route; failure never blocks the prompt or the
+   * persona switch that asked for it.
+   * @param {object} agent - agent handle carrying a session.
+   * @param {unknown} layerId - layer id.
+   * @param {string} source - diagnostic source (`agent` / `command` / `skill`).
+   * @returns {Promise<{ok: boolean, code?: string, layer?: object}>} outcome.
+   */
+  const applyModelFor = async (agent, layerId, source) => {
+    const id = typeof layerId === 'string' ? layerId.trim() : ''
+    if (id.length === 0) return { ok: true }
+    const service = layerService()
+    if (service === undefined) {
+      warn('vibestack: model layer %s ignored (%s): ctx.vibestack is unavailable', id, source)
+      return { ok: false, code: 'layers-unavailable' }
+    }
+    const layer = service.resolveLayer(id)
+    if (layer === undefined) {
+      warn('vibestack: model layer %s ignored (%s): unknown layer', id, source)
+      return { ok: false, code: 'layer-unknown' }
+    }
+    const controller = ctx.get('sessionController')
+    if (typeof controller?.selectModel !== 'function') {
+      warn('vibestack: model layer %s ignored (%s): sessionController.selectModel is unavailable', id, source)
+      return { ok: false, code: 'model-selection-unavailable' }
+    }
+    const sessionId = agent?.session?.id
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      warn('vibestack: model layer %s ignored (%s): session has no id', id, source)
+      return { ok: false, code: 'session-unavailable' }
+    }
+    try {
+      await controller.selectModel({
+        sessionId,
+        provider: layer.provider,
+        model: layer.model,
+        ...(layer.reasoningEffort === undefined ? {} : { reasoningEffort: layer.reasoningEffort }),
+      })
+      return { ok: true, layer }
+    } catch (error) {
+      warn('vibestack: model layer %s could not be applied (%s): %o', id, source, error)
+      return { ok: false, code: 'layer-unroutable', layer }
+    }
+  }
+
+  /**
+   * Find the layer that matches a session's current model projection.
+   * @param {object} service - layer service.
+   * @param {object | undefined} selection - projected `{provider, model, reasoningEffort?}`.
+   * @returns {object | undefined} matching layer.
+   */
+  const layerForSelection = (service, selection) => {
+    if (!selection || typeof selection !== 'object') return undefined
+    return service.listLayers().find((layer) => (
+      layer.provider === selection.provider &&
+      layer.model === selection.model &&
+      (layer.reasoningEffort ?? '') === (selection.reasoningEffort ?? '')
+    ))
+  }
+
+  /**
+   * Read the session's current model selection projection.
+   * @param {object} session - agent session.
+   * @returns {object | undefined} projected selection.
+   */
+  const selectionOf = (session) => {
+    const projections = ctx.get('sessionProjections')
+    try {
+      const value = projections?.stateOf?.(session, 'modelSelection')
+      return value?.next ?? value?.current ?? value
+    } catch {
+      return undefined
     }
   }
 
@@ -240,6 +374,9 @@ export function apply(ctx, rawConfig, deps = {}) {
             if (deliver === null) {
               return { kind: 'error', text: 'VibeStack: 当前 Agent 不支持投递用户回合' }
             }
+            if (config.applyModelOnCommand && entryNow.model.length > 0) {
+              await applyModelFor(agent, entryNow.model, 'command')
+            }
             const attachments = Array.isArray(invocation.attachments) ? invocation.attachments : []
             const text = renderTemplate(entryNow.template, invocation.rawInput)
             deliver(
@@ -323,12 +460,66 @@ export function apply(ctx, rawConfig, deps = {}) {
   }
 
   /**
+   * Apply `models.default` once to a session that has no recorded selection.
+   * @param {object} agent - agent handle.
+   * @returns {Promise<void>} resolves after the attempt.
+   */
+  const applyDefaultLayer = async (agent) => {
+    if (!config.applyDefaultLayer) return
+    const service = layerService()
+    if (service === undefined) return
+    if (state.defaults.has(agent.session)) return
+    state.defaults.add(agent.session)
+    if (selectionOf(agent.session) !== undefined) return
+    const id = service.defaultLayer()
+    if (id === null || id === undefined || String(id).length === 0) return
+    await applyModelFor(agent, id, 'default')
+  }
+
+  /**
+   * Apply layers named by `/vibestack-...` skill tokens in this step's input.
+   *
+   * Best effort: `dsh-tool-skill` owns the actual skill injection; a layer may
+   * take effect on the next request depending on listener order.
+   * @param {object} agent - agent handle.
+   * @param {Record<string, unknown>} plan - resolved plan.
+   * @param {object[]} messages - messages offered to this step.
+   * @returns {Promise<void>} resolves after each attempt.
+   */
+  const applySkillLayers = async (agent, plan, messages) => {
+    if (!config.applyModelOnSkill || !Array.isArray(messages) || messages.length === 0) return
+    const candidates = skillCandidates(plan, names).filter((skill) => skill.model.length > 0)
+    if (candidates.length === 0) return
+    let applied = state.skills.get(agent.session)
+    if (applied === undefined) {
+      applied = new Set()
+      state.skills.set(agent.session, applied)
+    }
+    for (const message of messages) {
+      if (message?.role !== 'user') continue
+      const text = (Array.isArray(message.content) ? message.content : [])
+        .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+        .map((part) => part.text)
+        .join('\n')
+      if (text.length === 0) continue
+      const tokens = new Set(text.match(/\/[a-z0-9][a-z0-9_-]*/gu) ?? [])
+      for (const skill of candidates) {
+        if (applied.has(skill.name)) continue
+        if (!tokens.has(`/${skill.name}`)) continue
+        applied.add(skill.name)
+        await applyModelFor(agent, skill.model, 'skill')
+      }
+    }
+  }
+
+  /**
    * Resolve the mode's work for one agent step.
    * @param {object} agent - agent handle.
    * @param {AbortSignal | undefined} signal - step signal.
+   * @param {object[]} [messages] - messages offered to this step.
    * @returns {Promise<Record<string, unknown> | null>} message to add to the step.
    */
-  const prepare = async (agent, signal) => {
+  const prepare = async (agent, signal, messages = []) => {
     const workingDirectory = ctx.get('workingDirectory')
     if (workingDirectory?.ensure === undefined) return null
     const cwd = await workingDirectory.ensure(agent, signal)
@@ -345,6 +536,8 @@ export function apply(ctx, rawConfig, deps = {}) {
       // the Agent roster; the step still starts with everything else.
       warn('vibestack: MCP sync failed: %o', error)
     }
+    await applyDefaultLayer(agent)
+    await applySkillLayers(agent, plan, messages)
     return injectInstructions(agent, plan)
   }
 
@@ -433,6 +626,9 @@ export function apply(ctx, rawConfig, deps = {}) {
           if (match === undefined) {
             return { kind: 'error', text: `VibeStack: 未找到 agent "${input}"` }
           }
+          if (config.applyModelOnAgent && typeof match.model === 'string' && match.model.length > 0) {
+            await applyModelFor(agent, match.model, 'agent')
+          }
           // The command executor logs `command/run` before this handler runs, so
           // the projection already folded the new selection.
           return { kind: 'success', text: `VibeStack: 已切换 Agent 为 ${match.name}` }
@@ -441,13 +637,50 @@ export function apply(ctx, rawConfig, deps = {}) {
     } catch (error) {
       warn('vibestack: cannot register /%s: %o', SELECT_COMMAND, error)
     }
+    try {
+      scope.commands.register({
+        name: LAYER_COMMAND,
+        description: '选择本会话的模型层（VibeStack 用户级路由）',
+        input: { hint: '[layer 名称|list]' },
+        handler: async ({ agent, rawInput }) => {
+          const service = layerService()
+          if (service === undefined) {
+            return { kind: 'error', text: 'VibeStack: 模型层服务未加载（缺少 vibestack-core 行）' }
+          }
+          const layers = service.listLayers()
+          if (layers.length === 0) {
+            return { kind: 'error', text: 'VibeStack: 没有模型层（在设置页「VibeStack 模型层」配置）' }
+          }
+          const input = String(rawInput ?? '').trim()
+          const current = layerForSelection(service, selectionOf(agent.session))
+          if (input.length === 0 || input === 'list') {
+            const names = layers.map((layer) => `${layer.id}（${layer.label}）`).join(', ')
+            return {
+              kind: 'success',
+              text: `VibeStack layers: ${names}（当前：${current?.id ?? '未映射'}）`,
+            }
+          }
+          const match = layers.find((layer) => layer.id.toLowerCase() === input.toLowerCase())
+          if (match === undefined) {
+            return { kind: 'error', text: `VibeStack: 未找到模型层 "${input}"` }
+          }
+          const applied = await applyModelFor(agent, match.id, 'layer-command')
+          if (!applied.ok) {
+            return { kind: 'error', text: `VibeStack: 无法应用模型层 ${match.id}（${applied.code}）` }
+          }
+          return { kind: 'success', text: `VibeStack: 已切换模型层为 ${match.id}（${match.label}）` }
+        },
+      })
+    } catch (error) {
+      warn('vibestack: cannot register /%s: %o', LAYER_COMMAND, error)
+    }
   })
 
   ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
     const decision = await next()
     try {
       if (decision?.kind === 'reject' || signal?.aborted === true) return decision
-      const message = await prepare(agent, signal)
+      const message = await prepare(agent, signal, decision.messages ?? [])
       if (message === null) return decision
       return { ...decision, messages: [...(decision.messages ?? []), message] }
     } catch (error) {

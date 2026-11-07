@@ -19,7 +19,7 @@ export { validCommandName }
  * @param {Record<string, unknown>} plan - normalized resolve plan.
  * @param {{prefix?: string, maxLength?: number}} [options] - namespace options.
  * @param {string[]} [warnings] - collector for dropped or colliding entries.
- * @returns {{name: string, canonical: string, group: string, description: string, template: string}[]} usable commands.
+ * @returns {{name: string, canonical: string, group: string, description: string, template: string, model: string}[]} usable commands.
  */
 export function commandEntries(plan, options = {}, warnings = []) {
   const commands = plan?.commands && typeof plan.commands === 'object' ? plan.commands : {}
@@ -45,7 +45,14 @@ export function commandEntries(plan, options = {}, warnings = []) {
       continue
     }
     seen.add(canonical)
-    entries.push({ name, canonical, group, description, template })
+    entries.push({
+      name,
+      canonical,
+      group,
+      description,
+      template,
+      model: typeof value.model === 'string' ? value.model : '',
+    })
   }
   return entries
 }

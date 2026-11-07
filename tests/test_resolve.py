@@ -152,7 +152,9 @@ def test_resolve_mcp_and_missing_tool(repo: Path, project: Path) -> None:
     assert any("broken" in warning for warning in plan.warnings)
 
 
-def test_resolve_keeps_last_agent_and_ignores_model(repo: Path, project: Path) -> None:
+def test_resolve_keeps_last_agent_and_drops_invalid_model(
+    repo: Path, project: Path
+) -> None:
     _write(
         repo / "capability-groups/domain/base/1.0.0/agents/helper.md",
         "---\nname: Helper\ndescription: base\nmode: primary\n---\nbase\n",
@@ -166,6 +168,40 @@ def test_resolve_keeps_last_agent_and_ignores_model(repo: Path, project: Path) -
     plan = resolve_project(repo, project)
     assert plan.agents["Helper"].system == "data"
     assert "model" not in plan.to_dict()["agents"]["Helper"]
+    assert any("invalid model" in warning for warning in plan.warnings)
+
+
+def test_resolve_model_references_are_syntax_checked(
+    repo: Path, project: Path
+) -> None:
+    core = repo / "capability-groups/core/0.1.0"
+    _write(
+        core / "agents/model-agent.md",
+        "---\nname: ModelAgent\ndescription: model\nmode: all\n"
+        "model: strong\n---\nbody\n",
+    )
+    _write(
+        core / "commands/model-command.md",
+        "---\nname: model-command\ndescription: model\n"
+        "model: fast\n---\nbody\n",
+    )
+    _write(
+        core / "skills/model-skill/SKILL.md",
+        "---\nname: model-skill\ndescription: model\nmodel: strong\n---\nbody\n",
+    )
+    _write(
+        core / "agents/bad-model.md",
+        "---\nname: BadModel\ndescription: bad\nmode: all\n"
+        "model: Bad Layer\n---\nbody\n",
+    )
+    init_stack(project, GroupRef("core", "0.1.0"))
+    plan = resolve_project(repo, project)
+    assert plan.agents["ModelAgent"].model == "strong"
+    assert plan.commands["model-command"].model == "fast"
+    assert plan.skills[-1].model == "strong"
+    assert plan.agents["BadModel"].model is None
+    assert any("invalid model" in warning for warning in plan.warnings)
+    assert "model" not in plan.to_dict()["agents"]["BadModel"]
 
 
 def test_resolve_is_read_only_and_fingerprint_tracks_content(

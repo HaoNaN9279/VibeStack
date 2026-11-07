@@ -73,6 +73,14 @@ vibe-stack tool serve <tool>      # MCP stdio
 不展开。Core 命令在任何 VibeStack 会话可执行；领域组命令只有在当前工作区激活了该组时
 才执行，否则返回“不属于当前工作区”。
 
+## 模型层
+
+能力组 Agent / 命令 / 技能可以写可选的 `model: <layer>`。层是本机配置
+（`~/.config/vibestack/config.json` 的 `models` 段），不含凭据；设置页
+「VibeStack 模型层」可增删改，输入框左下的 `◈` 菜单切换当前会话的层。
+`/vibestack-layer` 可列出层，`/vibestack-layer strong` 直接切换。层只影响会话路由，
+不改变工具、权限或沙箱；未定义层只告警，不阻断提示词。
+
 ## 开发能力组
 
 需要创建或修改能力组时，加载 `group-forge` 能力组的 `custom-group` 技能（以及

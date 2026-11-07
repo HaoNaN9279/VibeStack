@@ -59,10 +59,11 @@ test('personaAgents excludes subagent-only agents', () => {
   assert.deepEqual(personaAgents(agentList(PLAN)).map((agent) => agent.name), ['Athena', 'Hermes'])
 })
 
-test('agentSummaries drops host-only fields but keeps the source group', () => {
+test('agentSummaries drops host-only fields but keeps the source group and layer', () => {
   const summaries = agentSummaries(agentList(PLAN))
-  assert.deepEqual(Object.keys(summaries[0]), ['name', 'description', 'mode', 'group'])
+  assert.deepEqual(Object.keys(summaries[0]), ['name', 'description', 'mode', 'group', 'model'])
   assert.equal(summaries[0].group, 'core')
+  assert.equal(summaries[0].model, '')
 })
 
 test('pickDefaultAgent prefers Athena, then the configured name', () => {

@@ -57,6 +57,7 @@ export function agentList(plan) {
       mode: typeof value.mode === 'string' ? value.mode : 'all',
       system: typeof value.system === 'string' ? value.system : '',
       group: typeof value.group === 'string' ? value.group : '',
+      model: typeof value.model === 'string' ? value.model : '',
     })
   }
   return list
@@ -82,6 +83,7 @@ export function agentSummaries(list) {
     description: agent.description,
     mode: agent.mode,
     group: typeof agent.group === 'string' ? agent.group : '',
+    model: typeof agent.model === 'string' ? agent.model : '',
   }))
 }
 
@@ -117,7 +119,8 @@ export function sameRoster(left, right) {
       agent.name === other.name &&
       agent.description === other.description &&
       agent.mode === other.mode &&
-      (agent.group ?? '') === (other.group ?? '')
+      (agent.group ?? '') === (other.group ?? '') &&
+      (agent.model ?? '') === (other.model ?? '')
     )
   })
 }
@@ -180,6 +183,7 @@ export function rosterFromEvent(event) {
         description: typeof row.description === 'string' ? row.description : '',
         mode: typeof row.mode === 'string' ? row.mode : 'all',
         group: typeof row.group === 'string' ? row.group : '',
+        model: typeof row.model === 'string' ? row.model : '',
       })
     }
   }

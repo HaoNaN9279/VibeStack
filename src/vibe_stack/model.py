@@ -128,14 +128,18 @@ class ResolvedSkill:
     path: str
     group: str
     description: str = ""
+    model: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "name": self.name,
             "path": self.path,
             "group": self.group,
             "description": self.description,
         }
+        if self.model:
+            data["model"] = self.model
+        return data
 
 
 @dataclass
@@ -148,15 +152,19 @@ class ResolvedAgent:
     system: str
     source: str
     group: str
+    model: str | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        data: dict[str, object] = {
             "description": self.description,
             "mode": self.mode,
             "system": self.system,
             "source": self.source,
             "group": self.group,
         }
+        if self.model:
+            data["model"] = self.model
+        return data
 
 
 @dataclass
@@ -169,6 +177,7 @@ class ResolvedCommand:
     source: str
     group: str
     agent: str | None = None
+    model: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
@@ -179,6 +188,8 @@ class ResolvedCommand:
         }
         if self.agent:
             data["agent"] = self.agent
+        if self.model:
+            data["model"] = self.model
         return data
 
 

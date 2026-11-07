@@ -20,12 +20,20 @@ test('resolveConfig keeps well-typed values', () => {
     mcp: false,
     maxRulesBytes: 1024,
     defaultAgent: 'Hermes',
+    role: 'core',
+    modelSelector: 'replace',
+    modelsFile: 'C:/models.json',
+    applyDefaultLayer: false,
     resolveMode: 'project',
     namePrefix: 'vs',
     maxCommandNameLength: 40,
     skillRank: 300,
   })
   assert.equal(config.host, false)
+  assert.equal(config.role, 'core')
+  assert.equal(config.modelSelector, 'replace')
+  assert.equal(config.modelsFile, 'C:/models.json')
+  assert.equal(config.applyDefaultLayer, false)
   assert.equal(config.resolveMode, 'project')
   assert.equal(config.namePrefix, 'vs')
   assert.equal(config.maxCommandNameLength, 40)
@@ -46,6 +54,8 @@ test('resolveConfig ignores mistyped values', () => {
     maxRulesBytes: 'big',
     defaultAgent: 42,
     resolveMode: 'bogus',
+    role: 'worker',
+    modelSelector: 'replace-all',
     namePrefix: '',
     maxCommandNameLength: 4,
     skillRank: -1,
@@ -53,6 +63,8 @@ test('resolveConfig ignores mistyped values', () => {
   })
   assert.equal(config.host, DEFAULT_CONFIG.host)
   assert.equal(config.resolveMode, DEFAULT_CONFIG.resolveMode)
+  assert.equal(config.role, DEFAULT_CONFIG.role)
+  assert.equal(config.modelSelector, DEFAULT_CONFIG.modelSelector)
   assert.equal(config.namePrefix, DEFAULT_CONFIG.namePrefix)
   assert.equal(config.maxCommandNameLength, DEFAULT_CONFIG.maxCommandNameLength)
   assert.equal(config.skillRank, DEFAULT_CONFIG.skillRank)

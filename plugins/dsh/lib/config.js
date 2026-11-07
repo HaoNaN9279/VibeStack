@@ -7,8 +7,22 @@
  */
 
 export const DEFAULT_CONFIG = Object.freeze({
+  /** Row role: `core` (service/routes), `preset` (session mode), or `ui`. */
+  role: 'preset',
   /** `false` turns this row into the client-only UI row. */
   host: true,
+  /** Optional layer file; empty uses the global VibeStack config. */
+  modelsFile: '',
+  /** `additive` adds a layer control; `replace` also shadows the model seat. */
+  modelSelector: 'additive',
+  /** Apply the layer declared by the selected Agent persona. */
+  applyModelOnAgent: true,
+  /** Apply the layer declared by a capability-group command. */
+  applyModelOnCommand: true,
+  /** Apply the layer declared by a skill invoked with `/name`. */
+  applyModelOnSkill: true,
+  /** Apply `models.default` once to a fresh VibeStack session. */
+  applyDefaultLayer: true,
   /** Explicit `vibe-stack` executable. Empty means auto-discovery. */
   command: '',
   /** Resolve CLI timeout in milliseconds. */
@@ -38,6 +52,8 @@ export const DEFAULT_CONFIG = Object.freeze({
 })
 
 const RESOLVE_MODES = new Set(['project', 'vibestack'])
+const ROLES = new Set(['core', 'preset', 'ui'])
+const MODEL_SELECTORS = new Set(['additive', 'replace'])
 
 /**
  * Coerce a raw row config into the plugin's config shape.
@@ -62,6 +78,14 @@ export function resolveConfig(raw) {
     if (typeof value === 'string') {
       if (key === 'resolveMode') {
         if (RESOLVE_MODES.has(value)) config[key] = value
+        continue
+      }
+      if (key === 'role') {
+        if (ROLES.has(value)) config[key] = value
+        continue
+      }
+      if (key === 'modelSelector') {
+        if (MODEL_SELECTORS.has(value)) config[key] = value
         continue
       }
       config[key] = value

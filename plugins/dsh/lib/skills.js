@@ -25,7 +25,7 @@ export const SKILL_RANK = 250
  * @param {Record<string, unknown>} plan - normalized resolve plan.
  * @param {{prefix?: string, maxLength?: number, rank?: number}} [options] - namespace options.
  * @param {string[]} [warnings] - collector for dropped or colliding entries.
- * @returns {{name: string, originalName: string, description: string, directory: string, group: string}[]} unique candidates in plan order.
+ * @returns {{name: string, originalName: string, description: string, directory: string, group: string, model: string}[]} unique candidates in plan order.
  */
 export function skillCandidates(plan, options = {}, warnings = []) {
   const seen = new Set()
@@ -55,6 +55,7 @@ export function skillCandidates(plan, options = {}, warnings = []) {
       description: typeof skill.description === 'string' ? skill.description : '',
       directory: skill.path,
       group,
+      model: typeof skill.model === 'string' ? skill.model : '',
     })
   }
   return candidates

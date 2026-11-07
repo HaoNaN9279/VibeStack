@@ -80,9 +80,9 @@ vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
 | `core` | 已解析的 Core 摘要；`project` 模式无 stack 时为 `null` |
 | `groups` | 已解析的领域组摘要，按加载顺序 |
 | `rules` | 已校验规则路径，按加载顺序追加 |
-| `skills` | 已校验技能目录，按加载顺序追加 |
-| `agents` | 已合并 Agent，同名后加载者覆盖 |
-| `commands` | 已合并命令，同名后加载者覆盖 |
+| `skills` | 已校验技能目录，按加载顺序追加；可带 `model`（层 id） |
+| `agents` | 已合并 Agent，同名后加载者覆盖；可带 `model`（层 id） |
+| `commands` | 已合并命令，同名后加载者覆盖；可带 `model`（层 id） |
 | `mcp` | 已合并 MCP 配置，key 为 `vibe:<group>_<server>` |
 | `warnings` | 非致命问题 |
 | `fingerprint` | 解析输入内容的 SHA-256，用于诊断和未来缓存 |
@@ -91,6 +91,11 @@ vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
 `system`、`template`。`mcp` 已移除 `name` 字段。`rules`、`skills`、`agents`、`commands`
 的每一项都带 `group`，它是“Core + 当前工作区并集”的来源标识；DSH 插件用它生成
 `vibestack-<group>-<name>` 命名空间，并区分 Core 常驻命令与领域组命令。
+
+`model` 可选，语法为 `^[a-z0-9][a-z0-9_-]*$`、长度 ≤32。resolver 只校验语法，不校验层是否
+存在（层属于用户本机配置）；非法值写入 `warnings` 并省略该字段。DSH 插件把 `model` 当作
+模型中间层的层 id，在 Agent 选择、命令执行或用户 `/skill` 调用时解析为
+provider/model/reasoningEffort。
 
 ## 解析规则
 
@@ -109,6 +114,7 @@ vibe-stack resolve --json [--mode project|vibestack] --project <project-dir>
 | 类型 | 规则 |
 |---|---|
 | rules | 递归发现 `rules/**/*.md`；必须有 `name` |
+| `model` | Agent / 命令 / 技能可选；层 id 语法与长度校验，非法时告警并省略 |
 | agents | 单层 `agents/*.md`；必须有 `name`、`description`、`mode`，`mode` 只能是 `primary`、`subagent`、`all` |
 | commands | 单层 `commands/*.md`；必须有 `name`、`description`，`agent` 可选 |
 | skills | 目录内必须有 `SKILL.md`；`name` 匹配目录名和 `[a-z0-9]+(-[a-z0-9]+)*`；`description` 1-1024 字符；禁止 `metadata` |

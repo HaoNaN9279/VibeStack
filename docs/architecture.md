@@ -186,7 +186,7 @@ plugins/dsh/
   "schema_version": 1,
   "name": "dsh",
   "agent": "dsh",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "entrypoint": "index.js",
   "capabilities": ["rules", "agents", "commands", "skills", "mcp"]
 }
@@ -250,11 +250,22 @@ MCP 配置。
 {
   "schema_version": 1,
   "repository": "D:/workspace/work/VibeStack",
-  "core": { "name": "core", "version": "0.1.0" }
+  "core": { "name": "core", "version": "0.1.0" },
+  "models": {
+    "default": "strong",
+    "layers": [
+      { "id": "fast", "label": "快速", "provider": "deepseek-account",
+        "model": "deepseek-flash", "reasoningEffort": "low" },
+      { "id": "strong", "label": "深度", "provider": "deepseek-account",
+        "model": "deepseek-pro", "reasoningEffort": "high" }
+    ]
+  }
 }
 ```
 
-该文件只属于 VibeStack，不被 Agent 读取。
+该文件属于 VibeStack：CLI 读取仓库/Core 配置，DSH 插件的 `vibestack-core` 行读取
+`models` 段并提供 `ctx.vibestack` 服务与 `/api/vibestack/models` 设置路由。能力组只写
+`model: <layer>`；provider / model / reasoningEffort 与凭据留在本机。
 
 ## 9. CLI
 

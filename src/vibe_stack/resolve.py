@@ -33,6 +33,7 @@ MODE_VIBESTACK = "vibestack"
 _MODES = {MODE_PROJECT, MODE_VIBESTACK}
 _AGENT_MODES = {"primary", "subagent", "all"}
 _SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+_MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 _T = TypeVar("_T")
 
 
@@ -220,6 +221,7 @@ def _collect_content(
                 system=parsed.body,
                 source=_posix(file),
                 group=group.name,
+                model=_read_model(parsed.data, f"agent {file.name}", warnings),
             )
 
         for file in group.commands:
@@ -245,6 +247,7 @@ def _collect_content(
                 template=parsed.body,
                 source=_posix(file),
                 group=group.name,
+                model=_read_model(parsed.data, f"command {file.name}", warnings),
             )
 
         for tool_id in group.tools:
@@ -318,8 +321,28 @@ def _collect_skill(
             path=_posix(directory),
             group=group.name,
             description=description,
+            model=_read_model(
+                parsed.data, f"skill {directory.name}", warnings
+            ),
         )
     )
+
+
+def _read_model(
+    data: dict[str, object], label: str, warnings: list[str]
+) -> str | None:
+    """Read and syntax-check a ``model`` layer id.
+
+    The resolver cannot know which layers exist on the user's machine, so it
+    validates syntax only; an unknown layer is the plugin's warning.
+    """
+    value = frontmatter_text(data.get("model"))
+    if not value:
+        return None
+    if len(value) > 32 or _MODEL_ID.match(value) is None:
+        warnings.append(f"{label} has invalid model: {value}")
+        return None
+    return value
 
 
 def _read_frontmatter(path: Path, warnings: list[str]):

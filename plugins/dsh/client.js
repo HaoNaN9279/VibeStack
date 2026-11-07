@@ -177,6 +177,456 @@ window.__ModuleLoader__.load({
       return style;
     }
 
+    /** Exact Fetch route owned by the host core row. */
+    const LAYERS_PATH = "/api/vibestack/models";
+
+    /**
+     * Read the model-layer document from the host route.
+     * @returns {Promise<{layers: object[], default: string | null, warnings?: string[]}>} payload.
+     */
+    async function readLayerConfig() {
+      const response = await fetch(LAYERS_PATH, { credentials: "same-origin", cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.message ?? payload.code ?? `HTTP ${response.status}`);
+      }
+      return payload;
+    }
+
+    /**
+     * Write a model-layer document through the host route.
+     * @param {{layers: object[], default: string | null}} document - proposed document.
+     * @returns {Promise<object>} payload.
+     */
+    async function writeLayerConfig(document) {
+      const response = await fetch(LAYERS_PATH, {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(document)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const detail = payload.message ?? ((payload.warnings ?? []).join("; ") || `HTTP ${response.status}`);
+        throw new Error(detail);
+      }
+      return payload;
+    }
+
+    /**
+     * Derive the active layer from a session's model projection.
+     * @param {object[]} layers - configured layers.
+     * @param {object | undefined} selection - `{provider, model, reasoningEffort?}`.
+     * @returns {object | undefined} matching layer.
+     */
+    function activeLayer(layers, selection) {
+      if (!selection || typeof selection !== "object") return undefined;
+      return layers.find(
+        (layer) =>
+          layer.provider === selection.provider &&
+          layer.model === selection.model &&
+          (layer.reasoningEffort === undefined || layer.reasoningEffort === selection.reasoningEffort)
+      );
+    }
+
+    /**
+     * Additive model-layer menu in the composer control strip.
+     * @param {{useProjection: Function, onApply: (id: string) => Promise<void>}} props - slot props.
+     * @returns {object | null} react element or null outside the mode.
+     */
+    function LayerPicker(props) {
+      const preset = props.useProjection("agentPreset");
+      const projection = props.useProjection("modelSelection");
+      const selection = projection && (projection.next ?? projection.current ?? projection);
+      const [layers, setLayers] = react.useState([]);
+      const [open, setOpen] = react.useState(false);
+      const [busy, setBusy] = react.useState(false);
+      const [error, setError] = react.useState(null);
+      const [active, setActive] = react.useState(0);
+      const [pos, setPos] = react.useState(null);
+      const rootRef = react.useRef(null);
+      const triggerRef = react.useRef(null);
+      const menuRef = react.useRef(null);
+      const idRef = react.useRef(null);
+      const restoreFocus = react.useRef(false);
+
+      if (idRef.current === null) {
+        pickerSeq += 1;
+        idRef.current = "vibestack-layer-menu-" + pickerSeq;
+      }
+
+      const visible = preset === "vibestack";
+      const current = activeLayer(layers, selection);
+      const label = current ? current.label : selection ? "未映射" : "模型层";
+
+      const load = react.useCallback(async () => {
+        try {
+          const payload = await readLayerConfig();
+          setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+          setError(null);
+        } catch (failure) {
+          setLayers([]);
+          setError(failure instanceof Error ? failure.message : String(failure));
+        }
+      }, []);
+
+      react.useEffect(() => {
+        if (visible) void load();
+      }, [visible, load]);
+
+      const measure = react.useCallback(() => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        setPos(placeMenu(trigger));
+      }, []);
+
+      react.useEffect(() => {
+        if (!open) return;
+        const index = current === undefined ? 0 : layers.findIndex((layer) => layer.id === current.id);
+        setActive(index < 0 ? 0 : index);
+      }, [open, current, layers.length]);
+
+      react.useLayoutEffect(() => {
+        if (!open) {
+          setPos(null);
+          return undefined;
+        }
+        measure();
+        const onViewportChange = () => measure();
+        window.addEventListener("resize", onViewportChange);
+        window.addEventListener("scroll", onViewportChange, true);
+        return () => {
+          window.removeEventListener("resize", onViewportChange);
+          window.removeEventListener("scroll", onViewportChange, true);
+        };
+      }, [open, measure]);
+
+      react.useEffect(() => {
+        if (!open) return undefined;
+        const onPointerDown = (event) => {
+          const target = event.target;
+          if (!(target instanceof Node)) return;
+          const root = rootRef.current;
+          const menu = menuRef.current;
+          if (root && root.contains(target)) return;
+          if (menu && menu.contains(target)) return;
+          setOpen(false);
+        };
+        const onKey = (event) => {
+          if (event.key !== "Escape") return;
+          setOpen(false);
+          triggerRef.current?.focus?.();
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("keydown", onKey);
+        return () => {
+          document.removeEventListener("mousedown", onPointerDown);
+          document.removeEventListener("keydown", onKey);
+        };
+      }, [open]);
+
+      react.useEffect(() => {
+        if (busy) {
+          setOpen(false);
+          return;
+        }
+        if (!restoreFocus.current) return;
+        restoreFocus.current = false;
+        triggerRef.current?.focus?.();
+      }, [busy]);
+
+      if (!visible) return null;
+
+      const choose = async (layer) => {
+        if (busy || (current && current.id === layer.id)) {
+          setOpen(false);
+          return;
+        }
+        restoreFocus.current = true;
+        setBusy(true);
+        try {
+          await props.onApply(layer.id);
+        } catch (failure) {
+          console.warn("[vibestack] layer selection failed", failure);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const onKeyDown = (event) => {
+        if (!open || layers.length === 0) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setActive((index) => (index + 1) % layers.length);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setActive((index) => (index - 1 + layers.length) % layers.length);
+        } else if (event.key === "Enter" || event.key === " ") {
+          const layer = layers[active];
+          if (layer === undefined) return;
+          event.preventDefault();
+          void choose(layer);
+        }
+      };
+
+      const trigger = h(
+        "button",
+        {
+          type: "button",
+          ref: triggerRef,
+          style: open
+            ? Object.assign({}, styles.trigger, styles.triggerOpen)
+            : busy
+              ? Object.assign({}, styles.trigger, styles.triggerDisabled)
+              : styles.trigger,
+          title: current ? `VibeStack 模型层：${current.id}` : "VibeStack 模型层：未映射",
+          "aria-haspopup": "menu",
+          "aria-expanded": open,
+          "aria-controls": open ? idRef.current : undefined,
+          "aria-label": `VibeStack 模型层：${label}`,
+          "aria-busy": busy,
+          disabled: busy,
+          onClick: () => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            measure();
+            setOpen(true);
+            void load();
+          }
+        },
+        h("span", { style: styles.glyph, "aria-hidden": true }, "◈"),
+        h("span", { style: selection ? styles.label : Object.assign({}, styles.label, styles.placeholder) }, busy ? "切换中…" : label),
+        h("span", { style: styles.caret, "aria-hidden": true }, "▾")
+      );
+
+      const menu =
+        open && pos !== null
+          ? reactDom.createPortal(
+              h(
+                "div",
+                {
+                  ref: menuRef,
+                  id: idRef.current,
+                  role: "menu",
+                  "aria-label": "VibeStack 模型层",
+                  style: Object.assign({}, styles.menu, pos)
+                },
+                h(
+                  "div",
+                  { style: styles.menuHeader },
+                  h("span", { style: styles.menuTitle }, "VibeStack · 模型层"),
+                  h("span", { style: styles.menuHint }, "用户级路由；只影响会话模型，不改变权限或工具")
+                ),
+                error ? h("span", { style: styles.empty }, error) : null,
+                !error && layers.length === 0
+                  ? h("span", { style: styles.empty }, "未配置模型层（在设置中新增）")
+                  : layers.map((layer, index) =>
+                      h(
+                        "button",
+                        {
+                          key: layer.id,
+                          type: "button",
+                          role: "menuitemradio",
+                          "aria-checked": current !== undefined && current.id === layer.id,
+                          tabIndex: -1,
+                          style: index === active ? Object.assign({}, styles.item, styles.itemActive) : styles.item,
+                          onMouseEnter: () => setActive(index),
+                          onClick: () => void choose(layer)
+                        },
+                        h("span", { style: styles.check, "aria-hidden": true }, current && current.id === layer.id ? "✓" : ""),
+                        h(
+                          "span",
+                          { style: styles.itemBody },
+                          h("span", { style: styles.itemName }, layer.label, h("span", { style: styles.itemGroup }, layer.id)),
+                          h("span", { style: styles.itemDesc }, `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}`)
+                        )
+                      )
+                    )
+              ),
+              document.body
+            )
+          : null;
+
+      return h(
+        react.Fragment,
+        null,
+        h("div", { ref: rootRef, style: styles.root, onKeyDown }, trigger),
+        menu
+      );
+    }
+
+    /**
+     * Settings page for model layers.
+     * @param {{ctx?: object}} props - settings section props.
+     * @returns {object} react element.
+     */
+    function LayerSettings(props) {
+      const [layers, setLayers] = react.useState([]);
+      const [defaultId, setDefaultId] = react.useState(null);
+      const [draft, setDraft] = react.useState(null);
+      const [busy, setBusy] = react.useState(false);
+      const [message, setMessage] = react.useState(null);
+      const [error, setError] = react.useState(null);
+
+      const load = react.useCallback(async () => {
+        try {
+          const payload = await readLayerConfig();
+          setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+          setDefaultId(typeof payload.default === "string" ? payload.default : null);
+          setError(null);
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+        }
+      }, []);
+
+      react.useEffect(() => {
+        void load();
+      }, [load]);
+
+      const save = async () => {
+        if (draft === null) return;
+        setBusy(true);
+        setMessage(null);
+        setError(null);
+        try {
+          const originalId = draft._originalId ?? draft.id;
+          const next = layers.filter((layer) => layer.id !== originalId).concat([draft]);
+          const nextDefault = defaultId === originalId ? draft.id : defaultId;
+          const payload = await writeLayerConfig({ layers: next, default: nextDefault });
+          setLayers(Array.isArray(payload.layers) ? payload.layers : next);
+          setDefaultId(typeof payload.default === "string" ? payload.default : null);
+          setDraft(null);
+          setMessage("已保存");
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const publish = async (nextLayers, nextDefault) => {
+        setBusy(true);
+        setMessage(null);
+        setError(null);
+        try {
+          const payload = await writeLayerConfig({ layers: nextLayers, default: nextDefault });
+          setLayers(Array.isArray(payload.layers) ? payload.layers : nextLayers);
+          setDefaultId(typeof payload.default === "string" ? payload.default : null);
+          setMessage("已保存");
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const remove = (id) => publish(layers.filter((layer) => layer.id !== id), defaultId === id ? null : defaultId);
+      const makeDefault = (id) => publish(layers, defaultId === id ? null : id);
+
+      const field = (key, placeholder, value, onInput, type = "text") =>
+        h("input", {
+          type,
+          value: value ?? "",
+          placeholder,
+          onChange: (event) => onInput(event.target.value),
+          style: {
+            boxSizing: "border-box",
+            width: "100%",
+            padding: "7px 9px",
+            borderRadius: "var(--dsw-radius-sm, 6px)",
+            border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
+            background: "transparent",
+            color: "inherit",
+            fontFamily: "inherit",
+            fontSize: "13px"
+          }
+        });
+
+      const rowStyle = {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        padding: "8px 0",
+        borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.14))"
+      };
+
+      return h(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: "14px", padding: "4px 0 20px" } },
+        h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)", lineHeight: "19px" } },
+          "模型层是用户级路由别名。能力组只写 model: <layer>；provider / model / effort 留在本机配置，不进入仓库。"),
+        error ? h("div", { style: { color: "var(--dsw-alias-state-error-primary, #d33)", fontSize: "12px" } }, error) : null,
+        message ? h("div", { style: { color: "var(--dsw-alias-state-success-primary, #2a7)", fontSize: "12px" } }, message) : null,
+        layers.length === 0
+          ? h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "还没有模型层。")
+          : h("div", null, layers.map((layer) =>
+              h("div", { key: layer.id, style: rowStyle },
+                h("button", {
+                  type: "button",
+                  title: "设为默认层",
+                  onClick: () => void makeDefault(layer.id),
+                  style: {
+                    flex: "none",
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "50%",
+                    border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.4))",
+                    background: defaultId === layer.id ? "var(--dsw-alias-state-business-primary, #4a7)" : "transparent",
+                    color: "transparent",
+                    cursor: "pointer"
+                  }
+                }, "•"),
+                h("div", { style: { display: "flex", flexDirection: "column", minWidth: 0, flex: "1 1 auto" } },
+                  h("span", { style: { fontSize: "13px", fontWeight: 500 } }, `${layer.label} (${layer.id})`),
+                  h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)" } },
+                    `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}${defaultId === layer.id ? " · 默认" : ""}`)
+                ),
+                h("button", { type: "button", onClick: () => setDraft({ ...layer, _originalId: layer.id }), style: smallButton }, "编辑"),
+                h("button", { type: "button", onClick: () => void remove(layer.id), style: smallButton }, "删除")
+              )
+            )),
+        h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+          h("button", { type: "button", onClick: () => setDraft({ id: "", label: "", provider: "", model: "", reasoningEffort: "", description: "" }), style: primaryButton }, "新增模型层"),
+          h("button", { type: "button", onClick: () => void load(), style: smallButton }, "重新读取")
+        ),
+        draft === null
+          ? null
+          : h("div", { style: { display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "var(--dsw-radius-md, 10px)", border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.2))" } },
+              h("div", { style: { fontSize: "12px", fontWeight: 600 } }, "编辑模型层"),
+              field("id", "id（小写 kebab，如 strong）", draft.id, (value) => setDraft({ ...draft, id: value })),
+              field("label", "显示名（如 深度）", draft.label, (value) => setDraft({ ...draft, label: value })),
+              field("provider", "provider（如 deepseek-account）", draft.provider, (value) => setDraft({ ...draft, provider: value })),
+              field("model", "model（如 deepseek-pro）", draft.model, (value) => setDraft({ ...draft, model: value })),
+              field("reasoningEffort", "reasoningEffort（可选）", draft.reasoningEffort, (value) => setDraft({ ...draft, reasoningEffort: value })),
+              field("description", "说明（可选）", draft.description, (value) => setDraft({ ...draft, description: value })),
+              h("div", { style: { display: "flex", gap: "8px" } },
+                h("button", { type: "button", disabled: busy, onClick: () => void save(), style: primaryButton }, busy ? "保存中…" : "保存"),
+                h("button", { type: "button", disabled: busy, onClick: () => setDraft(null), style: smallButton }, "取消")
+              )
+            )
+      );
+    }
+
+    const smallButton = {
+      flex: "none",
+      padding: "5px 9px",
+      borderRadius: "var(--dsw-radius-sm, 6px)",
+      border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
+      background: "transparent",
+      color: "inherit",
+      fontFamily: "inherit",
+      fontSize: "12px",
+      cursor: "pointer"
+    };
+    const primaryButton = Object.assign({}, smallButton, {
+      background: "var(--dsw-alias-state-business-primary, #3a6df0)",
+      borderColor: "transparent",
+      color: "#fff"
+    });
+
     /**
      * Bottom-left agent menu for the VibeStack mode.
      * @param {{useProjection: Function, onSelect: (name: string) => Promise<void>}} props - slot props.
@@ -458,6 +908,41 @@ window.__ModuleLoader__.load({
             })
           },
           AgentPicker
+        )
+      );
+      ctx.slots.inject("conversation.input.left", () =>
+        ctx.slots.register(
+          {
+            name: "conversation.input.left",
+            id: "vibestack-layer",
+            order: 6,
+            inject: (sessionId) => ({
+              onApply: async (id) => {
+                const result = await ctx.remote.commands.execute(
+                  sessionId,
+                  "/vibestack-layer " + id,
+                  []
+                );
+                if (result && result.ok === false) {
+                  throw new Error(
+                    `vibestack: ${result.error?.code ?? "command-failed"}: ${result.error?.message ?? ""}`
+                  );
+                }
+              }
+            })
+          },
+          LayerPicker
+        )
+      );
+      ctx.slots.inject("settings.section", () =>
+        ctx.slots.register(
+          {
+            name: "settings.section",
+            id: "vibestack-models",
+            order: 40,
+            label: () => "VibeStack 模型层"
+          },
+          LayerSettings
         )
       );
     }

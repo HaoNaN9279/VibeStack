@@ -11,12 +11,20 @@
 # anchor to revisit when the DSH minor version changes.
 
 - insert:
-    # Client half of the plugin. It renders the Agent picker in the composer
-    # dock and hides itself unless the session runs the `vibestack` preset, so
-    # the row is harmless outside the mode.
+    # Root service row: provides `ctx.vibestack` (model layers) and the
+    # `/api/vibestack/models` settings route. It owns no session behaviour.
+    - id: vibestack-core
+      name: dsh-vibestack
+      config:
+        role: core
+
+    # Client half of the plugin. It renders the Agent / model-layer pickers in
+    # the composer and hides itself unless the session runs the `vibestack`
+    # preset, so the row is harmless outside the mode.
     - id: vibestack-ui
       name: dsh-vibestack
       config:
+        role: ui
         host: false
 
     - id: preset-vibestack
@@ -35,6 +43,8 @@
           # agent selection, persona section.
           - id: vibestack
             name: dsh-vibestack
+            config:
+              role: preset
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:

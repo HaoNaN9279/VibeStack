@@ -25,17 +25,17 @@ const PLAN = {
   ],
   skills: [
     { name: 'caveman', path: '/repo/skills/caveman', description: 'terse', group: 'core' },
-    { name: 'custom-group', path: '/repo/skills/custom-group', description: 'groups', group: 'group-forge' },
+    { name: 'custom-group', path: '/repo/skills/custom-group', description: 'groups', group: 'group-forge', model: 'strong' },
   ],
   agents: {
     Athena: { description: 'planner', mode: 'all', system: '# Athena system', group: 'core' },
     Hermes: { description: 'worker', mode: 'primary', system: '# Hermes system', group: 'core' },
-    Oracle: { description: 'reviewer', mode: 'all', system: '# Oracle system', group: 'group-forge' },
+    Oracle: { description: 'reviewer', mode: 'all', system: '# Oracle system', group: 'group-forge', model: 'strong' },
     Researcher: { description: 'subtask', mode: 'subagent', system: '# Researcher system', group: 'group-forge' },
   },
   commands: {
     'auto-git-commit': { description: 'commit', template: 'commit $ARGUMENTS', group: 'core' },
-    'group-new': { description: 'new group', template: 'forge $ARGUMENTS', group: 'group-forge' },
+    'group-new': { description: 'new group', template: 'forge $ARGUMENTS', group: 'group-forge', model: 'fast' },
   },
   mcp: {},
   warnings: [],
@@ -60,10 +60,14 @@ const CORE_ONLY_PLAN = {
  * @param {string} [preset] - preset the session runs, as the `agentPreset` projection reports it.
  * @returns {Record<string, any>} session double.
  */
+let sessionSeq = 0
+
 function createSession(preset = 'vibestack') {
   /** @type {{type: string, data: Record<string, unknown>}[]} */
   const events = []
+  sessionSeq += 1
   return {
+    id: 'session-' + sessionSeq,
     preset,
     events,
     surface: { nodes: [] },
@@ -119,6 +123,7 @@ function createHarness(cwd = PROJECT) {
       },
       stateOf(session, key) {
         if (key === 'agentPreset') return session.preset ?? null
+        if (key === 'modelSelection') return session.modelSelection
         if (key !== 'vibestack' || this.definition === null) return undefined
         return session.events.reduce(
           (state, event) => this.definition.apply(state, event),
@@ -158,6 +163,13 @@ function createHarness(cwd = PROJECT) {
         return () => {}
       },
     },
+    sessionController: {
+      calls: [],
+      async selectModel(request) {
+        this.calls.push(request)
+        return { selected: {} }
+      },
+    },
   }
   const ctx = {
     logger: { warn() {} },
@@ -187,12 +199,13 @@ function createHarness(cwd = PROJECT) {
  * Run one agent step through the plugin.
  * @param {Record<string, any>} harness - harness.
  * @param {Record<string, any>} session - session double.
+ * @param {object[]} [messages] - messages offered by earlier listeners.
  * @returns {Promise<Record<string, any>>} step decision.
  */
-async function step(harness, session) {
+async function step(harness, session, messages = []) {
   const handler = harness.handlers.get('agent/pre-step')
   const agent = { session, followup() {}, steer() {} }
-  return await handler({ agent, signal: undefined }, async () => ({ kind: 'accept', messages: [] }))
+  return await handler({ agent, signal: undefined }, async () => ({ kind: 'accept', messages }))
 }
 
 /**
@@ -457,6 +470,99 @@ test('the plugin registers no session or preset listeners', () => {
   const harness = createHarness()
   apply(harness.ctx, {}, { resolvePlan: resolveOk })
   assert.deepEqual([...harness.handlers.keys()], ['agent/pre-step'])
+})
+
+/**
+ * Build a minimal in-memory layer service.
+ * @param {{defaultId?: string | null}} [options] - default layer.
+ * @returns {Record<string, any>} service.
+ */
+function layerService(options = {}) {
+  const layers = [
+    { id: 'strong', label: '深度', provider: 'p', model: 'm-strong', reasoningEffort: 'high' },
+    { id: 'fast', label: '快速', provider: 'p', model: 'm-fast' },
+  ]
+  return {
+    layers,
+    listLayers() {
+      return layers.map((layer) => ({ ...layer }))
+    },
+    resolveLayer(id) {
+      const found = layers.find((layer) => layer.id === id)
+      return found ? { ...found } : undefined
+    },
+    defaultLayer() {
+      return options.defaultId ?? null
+    },
+  }
+}
+
+test('selecting an Agent applies its model layer', async () => {
+  const harness = createHarness()
+  harness.services.vibestack = layerService()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  await step(harness, harness.session)
+  const command = harness.services.commands.definitions.find((definition) => definition.name === SELECT_COMMAND)
+  const result = await command.handler({ agent: { session: harness.session }, rawInput: 'Oracle' })
+  assert.equal(result.kind, 'success')
+  assert.deepEqual(harness.services.sessionController.calls.at(-1), {
+    sessionId: harness.session.id,
+    provider: 'p',
+    model: 'm-strong',
+    reasoningEffort: 'high',
+  })
+})
+
+test('a command applies its model layer before followup', async () => {
+  const harness = createHarness()
+  harness.services.vibestack = layerService()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  await step(harness, harness.session)
+  const command = harness.services.commands.definitions.find(
+    (definition) => definition.name === 'vibestack-group-forge-group-new',
+  )
+  const followed = []
+  await command.handler({
+    agent: { session: harness.session, followup: (message) => followed.push(message) },
+    rawInput: 'x',
+    attachments: [],
+  })
+  assert.equal(followed.length, 1)
+  assert.equal(harness.services.sessionController.calls.at(-1).model, 'm-fast')
+})
+
+test('a skill token applies its model layer during pre-step', async () => {
+  const harness = createHarness()
+  harness.services.vibestack = layerService()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  await step(harness, harness.session, [
+    { role: 'user', content: [{ type: 'text', text: '/vibestack-group-forge-custom-group' }] },
+  ])
+  assert.equal(harness.services.sessionController.calls.at(-1).model, 'm-strong')
+})
+
+test('the default layer applies once to a fresh session', async () => {
+  const harness = createHarness()
+  harness.services.vibestack = layerService({ defaultId: 'strong' })
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  await step(harness, harness.session)
+  await step(harness, harness.session)
+  assert.equal(harness.services.sessionController.calls.length, 1)
+  assert.equal(harness.services.sessionController.calls[0].model, 'm-strong')
+})
+
+test('the layer command lists and applies configured layers', async () => {
+  const harness = createHarness()
+  harness.services.vibestack = layerService()
+  apply(harness.ctx, {}, { resolvePlan: resolveOk })
+  await step(harness, harness.session)
+  const command = harness.services.commands.definitions.find((definition) => definition.name === 'vibestack-layer')
+  const listed = await command.handler({ agent: { session: harness.session }, rawInput: 'list' })
+  assert.equal(listed.kind, 'success')
+  assert.match(listed.text, /strong/)
+  const applied = await command.handler({ agent: { session: harness.session }, rawInput: 'fast' })
+  assert.equal(applied.kind, 'success')
+  assert.equal(harness.services.sessionController.calls.at(-1).model, 'm-fast')
 })
 
 test('the projection version was bumped for the group field', () => {

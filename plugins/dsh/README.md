@@ -66,6 +66,8 @@ dsh plugin --profile desktop remove dsh-vibestack
 ```text
 /vibestack-agent           # 列出可选 Agent 与当前选择
 /vibestack-agent athena    # 切换人设
+/vibestack-layer           # 列出模型层与当前映射
+/vibestack-layer strong    # 切换模型层（等价于选择该路由）
 ```
 
 人设只改变系统提示词（追加该 Agent 的 `system`），不限制工具，也不改变其它模式。
@@ -88,6 +90,36 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 执行；领域组命令只有在当前工作区激活了该组时才执行，否则返回
 `不属于当前工作区`，不会跨项目泄漏。命令模板以**普通用户回合**投递（`followup`）。
 官方 DSH 命令（`/model`、`/compact` 等）与本插件的 `/vibestack-agent` 不受影响。
+
+### 模型层
+
+模型层把用户本机的 provider/model/reasoningEffort 打包成一个具名路由，能力组只写
+`model: <layer>`。层定义存放在全局配置 `~/.config/vibestack/config.json` 的
+`models` 段，不进入能力组、项目或会话日志；凭据仍由 DSH 管理。
+
+```jsonc
+{
+  "models": {
+    "default": "strong",
+    "layers": [
+      { "id": "fast", "label": "快速", "provider": "deepseek-account",
+        "model": "deepseek-flash", "reasoningEffort": "low" },
+      { "id": "strong", "label": "深度", "provider": "deepseek-account",
+        "model": "deepseek-pro", "reasoningEffort": "high" }
+    ]
+  }
+}
+```
+
+- 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
+- 设置页 **VibeStack 模型层** 可增删改层、设默认层；写入是原子替换。
+- 输入框左下的 **模型层** 菜单（`◈`）是增量控件，不遮蔽 DSH 自带的模型选择；
+  `modelSelector: replace` 预留给后续完整替换。
+- **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的
+  `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效；失败只告警，
+  不阻断人设/命令/技能。
+- `models.default` 会在空白 VibeStack 会话首次 pre-step 应用一次；已有模型选择的会话
+  不会覆盖。子 Agent 会话不公开模型选择入口。
 
 ### 能力组开发
 
@@ -131,12 +163,19 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 - id: vibestack
   name: dsh-vibestack
   config:
+    role: preset
     command: 'C:/Users/me/.local/bin/vibe-stack.exe'
     timeoutMs: 5000
     resolveMode: vibestack
     namePrefix: vibestack
     maxCommandNameLength: 48
     skillRank: 250
+    modelsFile: ''
+    modelSelector: additive
+    applyModelOnAgent: true
+    applyModelOnCommand: true
+    applyModelOnSkill: true
+    applyDefaultLayer: true
     rules: true
     skills: true
     commands: true
@@ -148,7 +187,14 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 
 | 字段 | 默认 | 含义 |
 |---|---|---|
+| `role` | `preset` | `core`：根级服务/设置路由；`preset`：会话模式；`ui`：纯客户端行 |
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
+| `modelsFile` | `''` | 层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
+| `modelSelector` | `additive` | `additive`：左下角增量层控件；`replace` 预留给后续完整替换 |
+| `applyModelOnAgent` | `true` | 切换人设时应用其 `model` 层 |
+| `applyModelOnCommand` | `true` | 执行能力组命令时应用其 `model` 层 |
+| `applyModelOnSkill` | `true` | 用户 `/vibestack-...` 调技能时应用其 `model` 层 |
+| `applyDefaultLayer` | `true` | 空白会话首次 pre-step 应用 `models.default` |
 | `command` | `''` | `vibe-stack` 可执行文件；空则按 `VIBESTACK_CLI` → `vibe-stack.exe` → `vibe-stack` 查找 |
 | `timeoutMs` | `5000` | 解析超时；`VIBESTACK_RESOLVE_TIMEOUT_MS` 优先 |
 | `resolveMode` | `vibestack` | `vibestack`：Core 常驻；`project`：退回旧行为（无 stack 不加载 Core） |
@@ -172,10 +218,10 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 plugins/dsh/
 ├── plugin.json          # VibeStack 适配器清单
 ├── package.json         # DSH 组合包：dsh.bundle.patch + dsh.client
-├── cordis.patch.yml     # 只 insert：根级 UI 行 + `preset-vibestack` 模式
-├── index.js             # 宿主半（preset 作用域）
+├── cordis.patch.yml     # 只 insert：根级 core/UI 行 + `preset-vibestack` 模式
+├── index.js             # 宿主半（core / preset 两种角色）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划
+├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 模型层
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
@@ -192,7 +238,9 @@ plugins/dsh/
 node test/agents.test.js && node test/config.test.js && node test/commands.test.js \
   && node test/mcp.test.js && node test/names.test.js && node test/plan.test.js \
   && node test/plans.test.js && node test/resolve.test.js && node test/rules.test.js \
-  && node test/skills.test.js && node test/repair.test.js && node test/plugin.test.js
+  && node test/skills.test.js && node test/repair.test.js && node test/plugin.test.js \
+  && node test/layers.test.js && node test/service.test.js && node test/models-route.test.js \
+  && node test/core.test.js
 ```
 
 `repair.test.js` 用合成的 v4 日志覆盖：补标记、保留 header 独立帧、幂等、拒绝撕裂尾部、
