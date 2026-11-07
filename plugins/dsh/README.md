@@ -114,8 +114,9 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 - 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
 - 设置页 **VibeStack 模型层** 可增删改层、设默认层，并用 `catalog()` 检测哪些层当前可路由；
   写入是原子替换。
-- 输入框左下的 **模型层** 菜单（`◈`）是增量控件，不遮蔽 DSH 自带的模型选择；
-  `modelSelector: replace` 预留给后续完整替换。
+- 输入框左下的 **模型层** 菜单（`◈`）是增量控件，不遮蔽 DSH 自带的模型选择。
+  `modelSelector: replace` 可选：用低 priority 遮蔽原生模型位，VibeStack 会话显示层，
+  其它模式的会话回退到实时原生模型目录（不会出现空选择位）。默认仍是 `additive`。
 - **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的
   `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效；失败只告警，
   不阻断人设/命令/技能。
@@ -191,7 +192,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `role` | `preset` | `core`：根级服务/设置路由；`preset`：会话模式；`ui`：纯客户端行 |
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
 | `modelsFile` | `''` | 层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `additive` | `additive`：左下角增量层控件；`replace` 预留给后续完整替换 |
+| `modelSelector` | `additive` | `additive`：左下角增量层控件；`replace`：遮蔽原生模型位，非 VibeStack 会话回退原生目录 |
 | `applyModelOnAgent` | `true` | 切换人设时应用其 `model` 层 |
 | `applyModelOnCommand` | `true` | 执行能力组命令时应用其 `model` 层 |
 | `applyModelOnSkill` | `true` | 用户 `/vibestack-...` 调技能时应用其 `model` 层 |

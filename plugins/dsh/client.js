@@ -619,6 +619,266 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * Opt-in replacement for the composer model seat.
+     *
+     * Only registered when `modelSelector: replace` is configured. For
+     * VibeStack sessions it lists layers; for other modes it falls back to the
+     * live native catalog so replacing the seat never removes model choice.
+     * @param {{useProjection: Function, available: boolean, directory: object, load: Function, select: Function}} props - slot props.
+     * @returns {object | null} react element or null for addressed subagents.
+     */
+    function ModelSeat(props) {
+      const preset = props.useProjection("agentPreset");
+      const subscribe = react.useCallback(
+        (callback) => (props.directory ? props.directory.subscribe(callback) : () => {}),
+        [props.directory]
+      );
+      const getSnapshot = react.useCallback(
+        () => (props.directory ? props.directory.getSnapshot() : null),
+        [props.directory]
+      );
+      const snapshot = react.useSyncExternalStore(subscribe, getSnapshot);
+      const [layers, setLayers] = react.useState([]);
+      const [open, setOpen] = react.useState(false);
+      const [busy, setBusy] = react.useState(false);
+      const [active, setActive] = react.useState(0);
+      const [pos, setPos] = react.useState(null);
+      const triggerRef = react.useRef(null);
+      const menuRef = react.useRef(null);
+      const idRef = react.useRef(null);
+      const restoreFocus = react.useRef(false);
+
+      if (idRef.current === null) {
+        pickerSeq += 1;
+        idRef.current = "vibestack-model-menu-" + pickerSeq;
+      }
+
+      const isVibeStack = preset === "vibestack";
+      const current = snapshot && snapshot.current ? snapshot.current : null;
+      const groups = snapshot && Array.isArray(snapshot.groups) ? snapshot.groups : [];
+      const layer = isVibeStack ? activeLayer(layers, current) : undefined;
+
+      react.useEffect(() => {
+        if (!props.available) return;
+        props.load?.();
+        if (!isVibeStack) return;
+        let alive = true;
+        readLayerConfig()
+          .then((payload) => {
+            if (alive) setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+          })
+          .catch(() => {
+            if (alive) setLayers([]);
+          });
+        return () => {
+          alive = false;
+        };
+      }, [props.available, isVibeStack, props.load]);
+
+      const measure = react.useCallback(() => {
+        if (triggerRef.current) setPos(placeMenu(triggerRef.current));
+      }, []);
+
+      react.useEffect(() => {
+        if (!open) {
+          setPos(null);
+          return undefined;
+        }
+        measure();
+        const onViewportChange = () => measure();
+        window.addEventListener("resize", onViewportChange);
+        window.addEventListener("scroll", onViewportChange, true);
+        return () => {
+          window.removeEventListener("resize", onViewportChange);
+          window.removeEventListener("scroll", onViewportChange, true);
+        };
+      }, [open, measure]);
+
+      react.useEffect(() => {
+        if (!open) return undefined;
+        const onPointerDown = (event) => {
+          const target = event.target;
+          if (!(target instanceof Node)) return;
+          if (menuRef.current && menuRef.current.contains(target)) return;
+          if (triggerRef.current && triggerRef.current.contains(target)) return;
+          setOpen(false);
+        };
+        const onKey = (event) => {
+          if (event.key !== "Escape") return;
+          setOpen(false);
+          triggerRef.current?.focus?.();
+        };
+        document.addEventListener("mousedown", onPointerDown);
+        document.addEventListener("keydown", onKey);
+        return () => {
+          document.removeEventListener("mousedown", onPointerDown);
+          document.removeEventListener("keydown", onKey);
+        };
+      }, [open]);
+
+      react.useEffect(() => {
+        if (busy) {
+          setOpen(false);
+          return;
+        }
+        if (!restoreFocus.current) return;
+        restoreFocus.current = false;
+        triggerRef.current?.focus?.();
+      }, [busy]);
+
+      if (!props.available) return null;
+
+      const nativeNames = new Map();
+      for (const group of groups) {
+        for (const model of group.models ?? []) nativeNames.set(`${group.id}/${model.id}`, model.name);
+      }
+      const nativeOptions = groups.flatMap((group) =>
+        (group.models ?? []).map((model) => ({
+          key: `${group.id}/${model.id}`,
+          label: model.name,
+          detail: isVibeStack ? `跟随 DSH · ${group.name}` : group.name,
+          selected: layer === undefined && current !== null && current.provider === group.id && current.model === model.id,
+          selection: { provider: group.id, model: model.id }
+        }))
+      );
+      const layerOptions = layers.map((entry) => ({
+        key: entry.id,
+        label: entry.label,
+        detail: `${entry.provider}/${entry.model}${entry.reasoningEffort ? " · " + entry.reasoningEffort : ""}`,
+        selected: layer !== undefined && layer.id === entry.id,
+        selection: {
+          provider: entry.provider,
+          model: entry.model,
+          ...(entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort })
+        }
+      }));
+      const options = isVibeStack ? layerOptions.concat(nativeOptions) : nativeOptions;
+      const nativeName = current ? nativeNames.get(`${current.provider}/${current.model}`) : undefined;
+      const label = isVibeStack
+        ? layer?.label ?? nativeName ?? (current ? "未映射" : "模型层")
+        : nativeName ?? current?.model ?? "选择模型";
+
+      const choose = async (option) => {
+        if (busy || option.selected) {
+          setOpen(false);
+          return;
+        }
+        restoreFocus.current = true;
+        setBusy(true);
+        try {
+          const result = await props.select(option.selection);
+          if (result && result.ok === false) {
+            throw new Error(`${result.error?.code ?? "model-unavailable"}: ${result.error?.message ?? ""}`);
+          }
+        } catch (failure) {
+          console.warn("[vibestack] model selection failed", failure);
+        } finally {
+          setBusy(false);
+        }
+      };
+
+      const onKeyDown = (event) => {
+        if (!open || options.length === 0) return;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setActive((index) => (index + 1) % options.length);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setActive((index) => (index - 1 + options.length) % options.length);
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          const option = options[active];
+          if (option !== undefined) void choose(option);
+        }
+      };
+
+      const trigger = h(
+        "button",
+        {
+          type: "button",
+          ref: triggerRef,
+          style: open
+            ? Object.assign({}, styles.trigger, styles.triggerOpen)
+            : busy
+              ? Object.assign({}, styles.trigger, styles.triggerDisabled)
+              : styles.trigger,
+          title: isVibeStack ? `VibeStack 模型层：${label}` : `模型：${label}`,
+          "aria-haspopup": "menu",
+          "aria-expanded": open,
+          "aria-controls": open ? idRef.current : undefined,
+          "aria-label": label,
+          "aria-busy": busy,
+          disabled: busy,
+          onClick: () => {
+            if (open) {
+              setOpen(false);
+              return;
+            }
+            measure();
+            setOpen(true);
+          }
+        },
+        h("span", { style: styles.glyph, "aria-hidden": true }, "◇"),
+        h("span", { style: styles.label }, busy ? "切换中…" : label),
+        h("span", { style: styles.caret, "aria-hidden": true }, "▾")
+      );
+
+      const menu =
+        open && pos !== null
+          ? reactDom.createPortal(
+              h(
+                "div",
+                {
+                  ref: menuRef,
+                  id: idRef.current,
+                  role: "menu",
+                  "aria-label": isVibeStack ? "VibeStack 模型层" : "模型",
+                  style: Object.assign({}, styles.menu, pos)
+                },
+                h(
+                  "div",
+                  { style: styles.menuHeader },
+                  h("span", { style: styles.menuTitle }, isVibeStack ? "VibeStack · 模型层" : "模型"),
+                  h("span", { style: styles.menuHint }, isVibeStack ? "用户级路由；不改变权限或工具" : "跟随 DSH 模型目录")
+                ),
+                options.length === 0
+                  ? h("span", { style: styles.empty }, isVibeStack ? "未配置模型层" : "没有可用模型")
+                  : options.map((option, index) =>
+                      h(
+                        "button",
+                        {
+                          key: option.key,
+                          type: "button",
+                          role: "menuitemradio",
+                          "aria-checked": option.selected,
+                          tabIndex: -1,
+                          style: index === active ? Object.assign({}, styles.item, styles.itemActive) : styles.item,
+                          onMouseEnter: () => setActive(index),
+                          onClick: () => void choose(option)
+                        },
+                        h("span", { style: styles.check, "aria-hidden": true }, option.selected ? "✓" : ""),
+                        h(
+                          "span",
+                          { style: styles.itemBody },
+                          h("span", { style: styles.itemName }, option.label),
+                          h("span", { style: styles.itemDesc }, option.detail)
+                        )
+                      )
+                    )
+              ),
+              document.body
+            )
+          : null;
+
+      return h(
+        react.Fragment,
+        null,
+        h("div", { style: styles.root, onKeyDown }, trigger),
+        menu
+      );
+    }
+
     const smallButton = {
       flex: "none",
       padding: "5px 9px",
@@ -954,6 +1214,45 @@ window.__ModuleLoader__.load({
           LayerSettings
         )
       );
+      // Optional full replacement: only when the core row reports
+      // `modelSelector: replace`. The component falls back to the live native
+      // catalog outside VibeStack sessions, so the model seat never goes blank.
+      void readLayerConfig()
+        .then((payload) => {
+          if (payload.selector !== "replace") return;
+          if (typeof ctx.inject !== "function") return;
+          ctx.inject(["slots", "modelDirectories", "sessions"], (scope) => {
+            try {
+              const models = scope.modelDirectories;
+              const sessions = scope.sessions;
+              scope.slots.inject("conversation.input.model", () =>
+                scope.slots.register(
+                  {
+                    name: "conversation.input.model",
+                    priority: -1,
+                    inject: (sessionId) => {
+                      const directory = models.directoryFor(sessionId);
+                      const available = sessions.subagentAddress(sessionId) === undefined;
+                      return {
+                        available,
+                        directory: directory.store,
+                        load: () => {
+                          if (available) directory.load().catch(() => {});
+                        },
+                        select: (selection) =>
+                          available ? directory.select(selection) : Promise.resolve(undefined)
+                      };
+                    }
+                  },
+                  ModelSeat
+                )
+              );
+            } catch (failure) {
+              console.warn("[vibestack] model seat replacement failed", failure);
+            }
+          });
+        })
+        .catch(() => {});
     }
 
     exports.apply = apply;

@@ -43,6 +43,7 @@ export class VibeStackService {
     this.ctx = options.ctx
     this.#file = resolveModelsPath(options.modelsFile)
     this.logger = options.logger
+    this.modelSelector = options.modelSelector === 'replace' ? 'replace' : 'additive'
     this.layers = []
     this.default = null
     this.warnings = []

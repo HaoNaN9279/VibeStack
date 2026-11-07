@@ -51,10 +51,11 @@ test('the core row provides ctx.vibestack and registers the models route', async
       },
     }), 'utf8')
     const { ctx, provided, routes } = createCoreContext()
-    apply(ctx, { role: 'core', modelsFile: file })
+    apply(ctx, { role: 'core', modelsFile: file, modelSelector: 'replace' })
     const service = provided.get('vibestack')
     assert.ok(service)
     assert.equal(service.apiVersion, 2)
+    assert.equal(service.modelSelector, 'replace')
     assert.equal(routes.length, 1)
     assert.equal(routes[0].path, '/api/vibestack/models')
     const response = await routes[0].fetch(new Request('http://localhost/api/vibestack/models'))
@@ -62,6 +63,7 @@ test('the core row provides ctx.vibestack and registers the models route', async
     assert.equal(payload.ok, true)
     assert.deepEqual(payload.layers.map((layer) => layer.id), ['strong'])
     assert.equal(payload.default, 'strong')
+    assert.equal(payload.selector, 'replace')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

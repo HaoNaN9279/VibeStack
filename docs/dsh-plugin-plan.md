@@ -8,7 +8,7 @@
 | 插件 | `dsh-vibestack`（`D:\workspace\VibeStack\plugins\dsh`，本地 `dsh plugin add` 安装） |
 | 范围 | 只自用：不发布 npm、不上架插件市场、不走 DSH 官方验证/审核流程 |
 | 关联 | HNFlow 插件（`dsh-hnflow`）**强依赖**本插件；本插件不知道 HNFlow 存在（单向依赖） |
-| 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§7 的层服务/设置页/增量选择器、§9 根级 core 行、§16–§19 与 §8.3 已实施；§7.3 的 `replace` 完整替换仍为后续项 |
+| 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§7（层服务/设置页/选择器，含可选 `replace`）、§9 根级 core 行、§16–§19 与 §8.3 已实施；剩余为 schemastery `Config` 与 GUI 手工验收 |
 
 ---
 
@@ -280,12 +280,13 @@ slug(x)   = lowercase(x) → 空格/下划线/非法字符 → "-" → 折叠连
 
 | 方案 | 做法 | 评价 |
 | --- | --- | --- |
-| **A（后续）** | 在 `conversation.input.model`（single）用更低 priority 注册层选择器；`single` 槽位允许不同 priority 遮蔽，但注册是全局的，需要先解决“仅 VibeStack 会话遮蔽、其它模式保留原生”的判定 | 满足“替换”需求；实现风险和回归面较大 |
-| **B（当前）** | 不遮蔽：在 `conversation.input.left` 加 `◈` 模型层控件；内置模型选择位保留 | 零遮蔽风险；当前实现 |
-| 配置 | `modelSelector` 取 `replace` 或 `additive`，当前默认 `additive`；`replace` 预留给后续 | 可运维 |
+| **A（可选 `replace`）** | 在 `conversation.input.model`（single）用 priority -1 注册；VibeStack 会话显示层，其它会话回退实时原生目录（`directory.store.groups`） | 满足“替换”需求；仍会全局替换原生组件，但不会让标准模式失去模型选择 |
+| **B（默认 `additive`）** | 不遮蔽：在 `conversation.input.left` 加 `◈` 模型层控件；内置模型选择位保留 | 零遮蔽风险；默认实现 |
+| 配置 | `modelSelector` 取 `replace` 或 `additive`，默认 `additive`；`replace` 需重启后生效 | 可运维 |
 
-> 已确认 DSH 的 `single` 槽位允许“不同 priority 遮蔽”，但注册本身是全局的。当前客户端
-> 插件由根级 UI 行持有，无法只在 `vibestack` preset 会话内遮蔽，因此先落地 B。
+> DSH 的 `single` 槽位允许“不同 priority 遮蔽”，但注册本身是全局的。`replace` 因此是
+> 可选项：组件在非 VibeStack 会话渲染原生目录，避免标准模式出现空选择位。默认仍用
+> `additive`，不改动现有 UI。
 
 方案 A 的边界（写进实现约束）：
 
@@ -413,7 +414,7 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | P1-5 根级服务 | `vibestack-core` 行用 `ctx.provide('vibestack', service)` 注册模型层服务；preset 行通过 `ctx.get('vibestack')` 消费 |
 | P2-1 `createUserMessage` | 优先通过 `loadHarnessModule('@deepseek-ai/dsh-llm')` 使用 harness 工厂；不可用时回退本地实现（测试路径） |
 | 模型层 | `lib/layers.js` / `lib/service.js` / `lib/models-route.js`；设置页；`vibestack-layer` 命令；agent / command / skill 三处应用；默认层 |
-| 模型层 UI | 采用 `conversation.input.left` 的 `◈` 增量控件；`conversation.input.model` 的完整替换因全局槽位遮蔽问题保留为后续 |
+| 模型层 UI | 默认 `conversation.input.left` 的 `◈` 增量控件；可选 `modelSelector: replace` 用 priority -1 遮蔽 `conversation.input.model`，非 VibeStack 会话回退原生目录 |
 
 未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、`conversation.input.model` 的完整替换。
 
@@ -478,7 +479,7 @@ ctx.vibestack = {
 | `skillRank` | `250` | **已实现**：skill 候选 rank |
 | `role` | `'preset'` | **已实现**：`core` / `preset` / `ui` |
 | `modelsFile` | `''` | **已实现**：层定义文件；空则用全局配置 `~/.config/vibestack/config.json` 的 `models` 段 |
-| `modelSelector` | `'additive'` | **已实现 `additive`**：左侧 `◈` 控件；`replace` 完整替换为后续项 |
+| `modelSelector` | `'additive'` | **已实现**：`additive` 左侧 `◈` 控件；`replace` 遮蔽原生模型位（非 VibeStack 会话回退原生目录） |
 | `applyModelOnCommand` | `true` | **已实现**：命令声明 `model` 时切换会话模型 |
 | `applyModelOnAgent` | `true` | **已实现**：切换人设时应用其层 |
 | `applyModelOnSkill` | `true` | **已实现**：用户 `/skill` 调用时应用其层（同回合尽力而为） |
@@ -580,7 +581,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | **M1** resolve v2 剩余字段 | 已在 M11 完成（`model` 字段与 `--api-version 1`） | `resolve --json` 输出 v2 且有 `model`；`--api-version 1` 输出旧形状 |
 | **M2** 命名空间 + 命令语义 | `lib/names.js`、命令注册、skill 改名、`followup`、跨项目校验、失败码（已在 M7 完成） | 旧短名不再注册；两个能力组的同名命令不冲突；命令在正确项目才执行 |
 | **M3** 模型层核心 | 已在 M11 实现（schemastery `Config` 仍待） | `ctx.get('vibestack').resolveLayer('strong')` 可读；坏配置不拖垮会话 |
-| **M4** 会话选择器 | `additive` 已实现；`conversation.input.model` 完整替换待解决全局槽位遮蔽 | VibeStack 会话显示层名；切换后实际请求路由改变；切到其他模式保留原生 |
+| **M4** 会话选择器 | `additive` 默认；`replace` 可选遮蔽（priority -1，非 VibeStack 回退原生目录） | VibeStack 会话显示层名；切换后实际请求路由改变；切到其他模式仍有原生模型选择 |
 | **M5** 三处引用生效 | 已在 M11 实现 | 三种来源各有一条端到端验证；未定义层只 warn 不中断 |
 | **M6** 收尾 | skill 文本、README、plugins/README、architecture、AGENTS 同步；测试全绿 | `node test/*.test.js` 全绿；手工验收桌面版 + web profile |
 
@@ -605,7 +606,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | --- | --- | --- |
 | DSH rc 的槽位/服务签名变化 | 模型选择器或命令注册失效 | 探针脚本纳入回归；`replace` 失败回落 `additive`；`engines.dsh` 绑定次版本 |
 | 遮蔽 `conversation.input.model` 与内置行为分叉 | 键盘/搜索/推理强度体验退化 | 当前用 `additive` 增量控件，不遮蔽；完整 `replace` 待解决“仅 VibeStack 会话遮蔽”后启用 |
-| 全局 `single` 槽位无法按会话选择性遮蔽 | 根级 UI 行注册会同时影响标准模式 | 暂不注册 `conversation.input.model`；保留 `◈` 增量控件 |
+| 全局 `single` 槽位无法按会话选择性遮蔽 | 根级 UI 行注册会同时影响标准模式 | 默认 `additive`；`replace` 为可选项，组件对非 VibeStack 会话渲染原生模型目录 |
 | 设置页写入与用户手动编辑并发 | 配置被覆盖 | 原子替换 + 写入前重读合并 `models` 段；其它段保留 |
 | `models.default` 覆盖用户已有模型选择 | 新会话路由意外改变 | 仅首次 pre-step 且 `modelSelection` 投影为空时应用；`applyDefaultLayer: false` 可关闭 |
 | 命名空间破坏旧习惯 | 用户输入旧名无效 | 迁移表 + `legacyAliases`（默认关） |
@@ -629,7 +630,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | --- | --- | --- |
 | D1 | 层定义存哪 | VibeStack 全局配置（`~/.config/vibestack/config.json` 的 `models` 段），不进能力组、不进项目 |
 | D2 | 层里能放什么 | 只放 provider/model/reasoningEffort/展示文案；凭据归 DSH |
-| D3 | 会话选择器如何实现 | 当前用 `additive`：`conversation.input.left` 的 `◈` 控件；完整遮蔽 `conversation.input.model` 因槽位注册全局性延后 |
+| D3 | 会话选择器如何实现 | 默认 `additive`：`conversation.input.left` 的 `◈` 控件；可选 `replace` 用 priority -1 遮蔽，非 VibeStack 会话回退原生目录 |
 | D4 | 当前层如何持久化 | 不持久化，按会话当前路由反查；避免两份真相 |
 | D5 | 命令名格式 | `vibestack-<group>-<name>` 小写 kebab；大写形式不可注册（DSH 语法） |
 | D6 | 命令投递方式 | `followup()`（下一个回合），不用 `steer()` |

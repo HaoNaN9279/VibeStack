@@ -59,6 +59,7 @@ export function applyCore(ctx, config) {
   const service = new VibeStackService({
     ctx,
     modelsFile: config.modelsFile,
+    modelSelector: config.modelSelector,
     logger,
   })
   try {
