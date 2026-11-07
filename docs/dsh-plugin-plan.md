@@ -411,10 +411,11 @@ resolve v2 为三者输出 `model`（可空字符串=未指定）。生效时机
 | R10 子会话并集 | 子 Agent 会话沿用同一 preset 与 `agent/pre-step`，按同一份 Core + 工作区计划生成名册；新增回归测试 |
 | P2-8 `plugin install` | CLI 的 `plugin install` 退场；`plugin list/status` 仅做自省；OpenCode 适配器删除 |
 | P1-5 根级服务 | `vibestack-core` 行用 `ctx.provide('vibestack', service)` 注册模型层服务；preset 行通过 `ctx.get('vibestack')` 消费 |
+| P2-1 `createUserMessage` | 优先通过 `loadHarnessModule('@deepseek-ai/dsh-llm')` 使用 harness 工厂；不可用时回退本地实现（测试路径） |
 | 模型层 | `lib/layers.js` / `lib/service.js` / `lib/models-route.js`；设置页；`vibestack-layer` 命令；agent / command / skill 三处应用；默认层 |
 | 模型层 UI | 采用 `conversation.input.left` 的 `◈` 增量控件；`conversation.input.model` 的完整替换因全局槽位遮蔽问题保留为后续 |
 
-未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、P2-1（`createUserMessage` 复制）、`conversation.input.model` 的完整替换。
+未处理（仍待后续里程碑）：P1-4（schemastery `Config`）、`conversation.input.model` 的完整替换。
 
 ### 8.4 不建议改的
 

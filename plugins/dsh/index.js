@@ -29,7 +29,7 @@ import {
 } from './lib/agents.js'
 import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
-import { createUserMessage } from './lib/messages.js'
+import { createUserMessage as createLocalUserMessage } from './lib/messages.js'
 import { normalizeMcpEntries, syncMcpServers } from './lib/mcp.js'
 import { createModelsRoute } from './lib/models-route.js'
 import { planUsable, unusablePlanReason } from './lib/plan.js'
@@ -121,6 +121,8 @@ export function apply(ctx, rawConfig, deps = {}) {
 
   /** @type {Record<string, Function> | undefined} */
   let commandsScope
+  /** Cached DSH message factory: function, null (not tried), or false (unavailable). */
+  let harnessUserMessage = null
 
   const logger = ctx.logger
   const warn = (message, ...args) => {
@@ -142,6 +144,32 @@ export function apply(ctx, rawConfig, deps = {}) {
       state.warned.add(message)
       warn('vibestack: %s', message)
     }
+  }
+
+  /**
+   * Build a user message with the harness factory when it is reachable.
+   *
+   * The local fallback keeps tests and degraded compositions working; once the
+   * harness module fails, later calls go straight to the fallback.
+   * @param {Record<string, unknown>} input - message body.
+   * @returns {Promise<object>} frozen user message.
+   */
+  const userMessage = async (input) => {
+    if (typeof harnessUserMessage === 'function') return harnessUserMessage(input)
+    if (harnessUserMessage !== false) {
+      try {
+        const module = await loadHarnessModule(ctx, '@deepseek-ai/dsh-llm')
+        const factory = module?.createUserMessage
+        if (typeof factory === 'function') {
+          harnessUserMessage = factory
+          return factory(input)
+        }
+      } catch {
+        // Fall through to the local shape.
+      }
+      harnessUserMessage = false
+    }
+    return createLocalUserMessage(input)
   }
 
   /**
@@ -380,7 +408,7 @@ export function apply(ctx, rawConfig, deps = {}) {
             const attachments = Array.isArray(invocation.attachments) ? invocation.attachments : []
             const text = renderTemplate(entryNow.template, invocation.rawInput)
             deliver(
-              createUserMessage({
+              await userMessage({
                 content: [...attachments, { type: 'text', text }],
                 source: { kind: 'user' },
               }),
@@ -453,7 +481,7 @@ export function apply(ctx, rawConfig, deps = {}) {
     record.digest = stamp
     const source = { kind: 'vibestack', form: 'instructions', digest: rendered.digest }
     if (roster !== null) source.roster = roster
-    return createUserMessage({
+    return userMessage({
       content: [{ type: 'text', text: rendered.text }],
       source,
     })
