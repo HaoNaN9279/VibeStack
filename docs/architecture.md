@@ -60,6 +60,9 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 `load_group` 对 `core` 使用 `capability-groups/core/<version>/`，其余组使用
 `capability-groups/domain/<name>/<version>/`。`discover_groups` 同时扫描两者。
 
+项目独有能力组放在 `<project>/.vibestack/groups/<name>/`，没有版本目录，`group.json`
+的 `version` 可省略。同名时项目组覆盖仓库组。
+
 `group.json`：
 
 ```json
@@ -82,7 +85,8 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 ```text
 <project>/.vibestack/
 ├── stack.json
-└── lock.json
+├── lock.json
+└── groups/<name>/    # 项目独有能力组，无版本目录
 ```
 
 `stack.json` 是唯一激活来源。`lock.json` 是 `sync` 生成的解析快照，供诊断和复现。

@@ -67,6 +67,7 @@ Core 使用 `core/<version>/group.json`，领域能力组使用 `domain/<group-n
 - Core 位于 `capability-groups/core/`：`project` 模式下随 `.vibestack/stack.json` 加载；
   DSH 的 `vibestack` 模式下无条件加载。
 - 领域能力组位于 `capability-groups/domain/`，只在 `groups` 中列出时加载。
+- 项目独有能力组位于 `.vibestack/groups/<name>/`（无版本目录），同名时覆盖仓库组。
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`。
 - 能力组内不放 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
 

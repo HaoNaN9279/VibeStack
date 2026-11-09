@@ -87,7 +87,7 @@ def activate(project_root: Path, ref: GroupRef, repo: Path | None = None) -> Pro
     if any(item.name == ref.name for item in stack.groups):
         raise GroupAlreadyActiveError(f"group '{ref.name}' is already active")
     repo_root = repo or _repo_for(project_root)
-    group = load_group(repo_root, ref.name, ref.version or None)
+    group = load_group(repo_root, ref.name, ref.version or None, project=project_root)
     stack.groups.append(GroupRef(name=group.name, version=group.version))
     write_stack(project_root, stack)
     return stack
@@ -112,6 +112,7 @@ def resolve_order(
     *,
     strict: bool = True,
     warnings: list[str] | None = None,
+    project: Path | None = None,
 ) -> list[GroupMeta]:
     """Resolve core + project groups, dependencies first, deduplicated.
 
@@ -127,7 +128,7 @@ def resolve_order(
             return
         seen.add(name)
         try:
-            group = load_group(repo, name, version or None)
+            group = load_group(repo, name, version or None, project=project)
         except VibeStackError as exc:
             if strict:
                 raise
@@ -169,7 +170,11 @@ def write_lock(
     warnings: list[str] | None = None,
 ) -> Path:
     """Write ``.vibestack/lock.json`` from an existing resolution or resolve it."""
-    resolved_groups = list(groups) if groups is not None else resolve_order(repo, stack)
+    resolved_groups = (
+        list(groups)
+        if groups is not None
+        else resolve_order(repo, stack, project=project_root)
+    )
     data = {
         "schema_version": 1,
         "repository": str(repo.resolve()),

@@ -108,6 +108,7 @@ tool:<guid>@v<version>
 
 - Core：`capability-groups/core/<version>/group.json`
 - 领域：`capability-groups/domain/<name>/<version>/group.json`
+- 项目：`<project>/.vibestack/groups/<name>/group.json`（无版本目录，同名覆盖仓库组）
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`
 - 工具包：`tools/<name>/<version>/tool.json`
 - 版本目录发布后不可修改；升级新建版本目录，`guid` 不变

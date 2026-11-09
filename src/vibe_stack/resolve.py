@@ -100,7 +100,9 @@ def build_plan(
     stack = _stack_for_mode(stack, requested)
     if stack is None:  # pragma: no cover - defensive, mode helpers guarantee a stack
         raise VibeStackError("mode requires a project stack")
-    groups = resolve_order(repo, stack, strict=strict, warnings=warnings)
+    groups = resolve_order(
+        repo, stack, strict=strict, warnings=warnings, project=project
+    )
     core_name = stack.core.name if stack.core is not None else ""
     core_meta = next((group for group in groups if group.name == core_name), None)
     if requested == MODE_VIBESTACK and core_meta is None:
@@ -113,7 +115,7 @@ def build_plan(
             groups=list(stack.groups),
         )
         fallback_groups = resolve_order(
-            repo, fallback, strict=strict, warnings=warnings
+            repo, fallback, strict=strict, warnings=warnings, project=project
         )
         fallback_core = next(
             (group for group in fallback_groups if group.name == "core"), None

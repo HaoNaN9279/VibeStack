@@ -1,7 +1,6 @@
 {
   "guid": "c61b4007a1d842879f97ec50720224b9",
   "name": "vibestack-dev",
-  "version": "1.0.0",
   "description": "VibeStack 仓库自身的开发约定：能力组内容就地更新，不做版本升级。",
   "permissions": [
     "fs"

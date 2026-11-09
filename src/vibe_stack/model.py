@@ -266,7 +266,7 @@ class ProjectStack:
             "schema_version": self.schema_version,
             "agents": list(self.agents),
             "groups": [
-                {"name": ref.name, "version": ref.version} for ref in self.groups
+                _group_ref_dict(ref) for ref in self.groups
             ],
         }
         if self.core is not None:
@@ -307,6 +307,14 @@ class ProjectStack:
             agents=[str(item) for item in agents] if isinstance(agents, list) else [],
             groups=groups,
         )
+
+
+def _group_ref_dict(ref: GroupRef) -> dict[str, object]:
+    """Serialize a group reference, omitting an empty version."""
+    data: dict[str, object] = {"name": ref.name}
+    if ref.version:
+        data["version"] = ref.version
+    return data
 
 
 def _md_files(directory: Path) -> list[Path]:

@@ -176,13 +176,13 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace, repo: Path) -> int:
     project = args.project.resolve()
     if args.command == "list":
-        return _list(repo)
+        return _list(repo, project)
     if args.command == "status":
         return _status(project)
     if args.command == "init":
         return _init(repo, project, args.core)
     if args.command == "info":
-        return _info(repo, args.group, args.group_version)
+        return _info(repo, project, args.group, args.group_version)
     if args.command == "activate":
         return _activate(repo, project, args.groups)
     if args.command == "deactivate":
@@ -204,11 +204,12 @@ def _dispatch(args: argparse.Namespace, repo: Path) -> int:
     raise VibeStackError(f"unknown command: {args.command}")
 
 
-def _list(repo: Path) -> int:
-    groups = discover_groups(repo)
+def _list(repo: Path, project: Path) -> int:
+    groups = discover_groups(repo, project=project)
     print("Capability groups:")
     for group in groups:
-        print(f"  {group.name}@{group.version}  {group.description}")
+        label = f"{group.name}@{group.version}" if group.version else group.name
+        print(f"  {label}  {group.description}")
     tools = discover_tools(repo)
     print("\nTools:")
     for tool in tools:
@@ -228,7 +229,8 @@ def _status(project: Path) -> int:
     else:
         print("groups:")
         for ref in stack.groups:
-            print(f"  {ref.name}@{ref.version}")
+            label = f"{ref.name}@{ref.version}" if ref.version else ref.name
+            print(f"  {label}")
     if lock_path(project).is_file():
         print(f"lock: {lock_path(project)}")
     return 0
@@ -249,9 +251,10 @@ def _init(repo: Path, project: Path, core_value: str) -> int:
     return 0
 
 
-def _info(repo: Path, name: str, version: str) -> int:
-    group = load_group(repo, name, version or None)
-    print(f"{group.name}@{group.version}")
+def _info(repo: Path, project: Path, name: str, version: str) -> int:
+    group = load_group(repo, name, version or None, project=project)
+    label = f"{group.name}@{group.version}" if group.version else group.name
+    print(label)
     print(f"guid: {group.guid}")
     print(f"description: {group.description}")
     print(f"extends: {', '.join(group.extends) or '(none)'}")
@@ -272,9 +275,10 @@ def _activate(repo: Path, project: Path, values: list[str]) -> int:
     for value in values:
         ref = parse_ref(value)
         stack = activate(project, ref, repo)
-        group = load_group(repo, ref.name, ref.version or None)
+        group = load_group(repo, ref.name, ref.version or None, project=project)
         missing = missing_tools(repo, [group])
-        print(f"activated {group.name}@{group.version}")
+        label = f"{group.name}@{group.version}" if group.version else group.name
+        print(f"activated {label}")
         for item in missing:
             print(f"  warning: missing tool {item}", file=sys.stderr)
         print(f"  stack: {stack_path(project)} ({len(stack.groups)} groups)")

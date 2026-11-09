@@ -9,6 +9,7 @@
 ```text
 capability-groups/core/<version>/          # 常驻能力组
 capability-groups/domain/<name>/<version>/ # 领域能力组
+<project>/.vibestack/groups/<name>/       # 项目独有能力组（无版本目录）
 tools/<name>/<version>/                    # 工具包
 plugins/<agent>/                           # Agent 插件适配器
 src/vibe_stack/                            # Python 核心

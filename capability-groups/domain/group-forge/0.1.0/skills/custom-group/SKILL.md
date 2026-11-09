@@ -16,6 +16,7 @@ license: MIT
 |---|---|---|
 | Core | `capability-groups/core/<version>/` | 项目模式下项目有 `.vibestack/stack.json`；VibeStack 模式下始终加载 |
 | 领域 | `capability-groups/domain/<name>/<version>/` | 仅在项目 `.vibestack/stack.json` 的 `groups` 中列出时加载 |
+| 项目 | `<project>/.vibestack/groups/<name>/` | 仅该项目加载，无版本目录，同名覆盖仓库组 |
 
 领域组不默认激活。需要时在项目根目录执行：
 

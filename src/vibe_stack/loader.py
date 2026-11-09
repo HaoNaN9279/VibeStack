@@ -11,6 +11,8 @@ from vibe_stack.model import GroupMeta, ToolMeta, read_json
 _SEMVER = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
 _CORE_GROUP = "core"
 _DOMAIN_DIR = "domain"
+_PROJECT_DIR = ".vibestack"
+_PROJECT_GROUPS = "groups"
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -27,13 +29,40 @@ def _group_base(repo: Path, name: str) -> Path:
     return base / _DOMAIN_DIR / name
 
 
-def load_group(repo: Path, name: str, version: str | None = None) -> GroupMeta:
+def project_groups_dir(project: Path) -> Path:
+    """Return ``<project>/.vibestack/groups``."""
+    return project / _PROJECT_DIR / _PROJECT_GROUPS
+
+
+def _project_group_root(project: Path | None, name: str) -> Path | None:
+    """Return the project-local group root, or ``None`` when absent."""
+    if project is None:
+        return None
+    root = project_groups_dir(project) / name
+    return root if (root / "group.json").is_file() else None
+
+
+def load_group(
+    repo: Path,
+    name: str,
+    version: str | None = None,
+    *,
+    project: Path | None = None,
+) -> GroupMeta:
     """Load one capability group.
 
-    Core lives in ``capability-groups/core``; every other group lives in
-    ``capability-groups/domain``. When *version* is omitted, choose the
+    Core lives in ``capability-groups/core``; every other repository group lives
+    in ``capability-groups/domain``. When *version* is omitted, choose the
     highest semver available.
+
+    A project-local group at ``<project>/.vibestack/groups/<name>`` wins over a
+    repository group of the same name. It has no version directory, so its
+    ``group.json`` ``version`` is optional.
     """
+    local_root = _project_group_root(project, name)
+    if local_root is not None:
+        return _load_project_group(local_root, name, version)
+
     base = _group_base(repo, name)
     if not base.is_dir():
         raise GroupNotFoundError(f"capability group '{name}' not found")
@@ -63,10 +92,35 @@ def load_group(repo: Path, name: str, version: str | None = None) -> GroupMeta:
         raise VibeStackError(
             f"{root / 'group.json'} name/version must match the directory"
         )
+    return _group_meta(data, root, name, str(data["version"]))
+
+
+def _load_project_group(root: Path, name: str, version: str | None) -> GroupMeta:
+    """Load a project-local group, which carries no version directory."""
+    data = read_json(root / "group.json")
+    required = ("guid", "name", "description")
+    missing = [key for key in required if key not in data]
+    if missing:
+        raise VibeStackError(
+            f"{root / 'group.json'} missing fields: {', '.join(missing)}"
+        )
+    if str(data["name"]) != name:
+        raise VibeStackError(f"{root / 'group.json'} name must match the directory")
+    declared = str(data.get("version", ""))
+    if version and declared != version:
+        raise GroupNotFoundError(
+            f"capability group '{name}' version '{version}' not found"
+        )
+    return _group_meta(data, root, name, declared)
+
+
+def _group_meta(
+    data: dict[str, object], root: Path, name: str, version: str
+) -> GroupMeta:
     return GroupMeta(
         guid=str(data["guid"]),
-        name=str(data["name"]),
-        version=str(data["version"]),
+        name=name,
+        version=version,
         description=str(data["description"]),
         permissions=_str_list(data.get("permissions")),
         extends=_str_list(data.get("extends")),
@@ -76,8 +130,23 @@ def load_group(repo: Path, name: str, version: str | None = None) -> GroupMeta:
     )
 
 
-def discover_groups(repo: Path) -> list[GroupMeta]:
-    """Discover core and domain capability groups."""
+def discover_groups(repo: Path, *, project: Path | None = None) -> list[GroupMeta]:
+    """Discover repository groups plus the project's own groups."""
+    groups = _discover_repo_groups(repo)
+    if project is not None:
+        base = project_groups_dir(project)
+        if base.is_dir():
+            for config in sorted(base.glob("*/group.json")):
+                try:
+                    groups.append(
+                        _load_project_group(config.parent, config.parent.name, None)
+                    )
+                except VibeStackError:
+                    continue
+    return groups
+
+
+def _discover_repo_groups(repo: Path) -> list[GroupMeta]:
     base = repo / "capability-groups"
     if not base.is_dir():
         return []
