@@ -224,11 +224,12 @@ vibe-stack plugin status dsh
 
 ### 模型层
 
-能力组只写 `model: <layer>`；层的 provider/model/reasoningEffort 保存在
-`~/.config/vibestack/config.json` 的 `models` 段，由 DSH 插件读取。设置页
-「VibeStack 模型层」可增删改层；输入框右下角的模型位切换当前会话的层，左下角保持
-Agent 选择。未配置层时使用内置 `flash`（`deepseek-account/deepseek-flash`）。
-详见 [`plugins/dsh/README.md`](plugins/dsh/README.md#模型层)。
+模型层是平台级路由档位（`fast` / `standard` / `strong` / `vision`，默认 `standard`），
+层目录由 `vibe-stack models catalog` 提供。能力组只写可选的 `model: <layer>`；层的
+provider/model/reasoningEffort 绑定保存在本机 `~/.config/vibestack/config.json` 的
+`models.bindings.<agent>`，由各 Agent 插件读取。DSH 设置页可为平台层绑定本机模型，也可
+新增仅在 DSH 可用的自定义层；输入框右下角的模型位切换当前会话的层，左下角保持 Agent 选择。
+详见 [`docs/model-layers.md`](docs/model-layers.md)。
 
 ## CLI
 
@@ -241,6 +242,8 @@ vibe-stack activate <group>[@version]
 vibe-stack deactivate <group>
 vibe-stack sync
 vibe-stack resolve --json [--mode project|vibestack]
+vibe-stack models catalog
+vibe-stack models show --agent dsh
 vibe-stack tool list
 vibe-stack tool run <tool> -- <args>
 vibe-stack tool serve <tool>

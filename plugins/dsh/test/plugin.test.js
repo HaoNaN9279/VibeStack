@@ -496,17 +496,23 @@ test('binding the preset writes nothing to the session log', async () => {
  */
 function layerService(options = {}) {
   const layers = [
-    { id: 'strong', label: '深度', provider: 'p', model: 'm-strong', reasoningEffort: 'high' },
-    { id: 'fast', label: '快速', provider: 'p', model: 'm-fast' },
+    { id: 'strong', label: '深度', provider: 'p', model: 'm-strong', reasoningEffort: 'high', bound: true },
+    { id: 'fast', label: '快速', provider: 'p', model: 'm-fast', bound: true },
   ]
   return {
     layers,
+    listCatalog() {
+      return layers.map((layer) => ({ ...layer }))
+    },
     listLayers() {
       return layers.map((layer) => ({ ...layer }))
     },
     resolveLayer(id) {
       const found = layers.find((layer) => layer.id === id)
       return found ? { ...found } : undefined
+    },
+    hasLayer(id) {
+      return layers.some((layer) => layer.id === id)
     },
     defaultLayer() {
       return options.defaultId ?? null

@@ -24,6 +24,11 @@ from vibe_stack.model import (
     ResolvedSkill,
     ToolMeta,
 )
+from vibe_stack.model_layers import (
+    DEFAULT_MODEL_LAYER,
+    is_model_layer,
+    model_layer_catalog,
+)
 from vibe_stack.project import read_stack, resolve_order
 from vibe_stack.repo import default_core
 
@@ -35,6 +40,16 @@ _AGENT_MODES = {"primary", "subagent", "all"}
 _SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _COMMAND_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 _MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_HOST_MODEL_FIELDS = (
+    "provider",
+    "temperature",
+    "permission",
+    "permissions",
+    "reasoningEffort",
+    "reasoning_effort",
+    "modelName",
+    "model_name",
+)
 _T = TypeVar("_T")
 
 
@@ -78,6 +93,8 @@ def build_plan(
             mcp={},
             warnings=warnings,
             fingerprint=_fingerprint(repo, None, [], {}, requested),
+            model_layers=model_layer_catalog(),
+            model_default=DEFAULT_MODEL_LAYER,
         )
 
     stack = _stack_for_mode(stack, requested)
@@ -130,6 +147,8 @@ def build_plan(
         fingerprint=_fingerprint(
             repo, stack, groups, content["tools"], requested
         ),
+        model_layers=model_layer_catalog(),
+        model_default=DEFAULT_MODEL_LAYER,
         group_metas=groups,
     )
 
@@ -195,6 +214,7 @@ def _collect_content(
             parsed = _read_frontmatter(file, warnings)
             if parsed is None:
                 continue
+            _check_host_model_fields(parsed.data, f"agent {file.name}", warnings)
             name = frontmatter_text(parsed.data.get("name"))
             description = frontmatter_text(parsed.data.get("description"))
             mode = frontmatter_text(parsed.data.get("mode"))
@@ -229,6 +249,7 @@ def _collect_content(
             parsed = _read_frontmatter(file, warnings)
             if parsed is None:
                 continue
+            _check_host_model_fields(parsed.data, f"command {file.name}", warnings)
             name = frontmatter_text(parsed.data.get("name"))
             description = frontmatter_text(parsed.data.get("description"))
             missing = [
@@ -291,6 +312,7 @@ def _collect_skill(
     parsed = _read_frontmatter(file, warnings)
     if parsed is None:
         return
+    _check_host_model_fields(parsed.data, f"skill {directory.name}", warnings)
     name = frontmatter_text(parsed.data.get("name"))
     description = frontmatter_text(parsed.data.get("description"))
     missing = [
@@ -335,18 +357,34 @@ def _collect_skill(
 def _read_model(
     data: dict[str, object], label: str, warnings: list[str]
 ) -> str | None:
-    """Read and syntax-check a ``model`` layer id.
+    """Read and validate a ``model`` layer id.
 
-    The resolver cannot know which layers exist on the user's machine, so it
-    validates syntax only; an unknown layer is the plugin's warning.
+    The platform catalog is the single source of layer ids, so an unknown id is
+    a content error here instead of a runtime-only plugin warning.
     """
     value = frontmatter_text(data.get("model"))
     if not value:
         return None
-    if len(value) > 32 or _MODEL_ID.match(value) is None:
-        warnings.append(f"{label} has invalid model: {value}")
+    if len(value) > 32 or _MODEL_ID.match(value) is None or not is_model_layer(value):
+        warnings.append(f"{label} has invalid model layer: {value}")
         return None
     return value
+
+
+def _check_host_model_fields(
+    data: dict[str, object], label: str, warnings: list[str]
+) -> None:
+    """Reject host-specific model settings in capability-group content.
+
+    A group may only name a platform layer. Provider ids, concrete model names,
+    temperature, reasoning effort, and permission flags belong to the host
+    adapter or its local binding, never to shared content.
+    """
+    for key in _HOST_MODEL_FIELDS:
+        if key in data:
+            warnings.append(
+                f"{label} must not declare {key}; use model: <layer> instead"
+            )
 
 
 def _read_frontmatter(path: Path, warnings: list[str]):
@@ -413,6 +451,8 @@ def _fingerprint(
     digest.update(
         f"vibestack-resolve-v{SCHEMA_VERSION}:{mode}\0".encode("utf-8")
     )
+    for layer in model_layer_catalog():
+        digest.update(f"model-layer:{layer['id']}\0".encode("utf-8"))
     if stack is not None:
         digest.update(
             json.dumps(

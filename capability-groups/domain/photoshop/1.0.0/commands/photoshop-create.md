@@ -1,6 +1,7 @@
 ---
 name: photoshop-create
 description: 搭建新的 Photoshop 开发项目脚手架，支持 ExtendScript、UXP 和 C++ SDK 三种类型
+model: standard
 ---
 
 # `/photoshop-create` — Photoshop 项目脚手架搭建

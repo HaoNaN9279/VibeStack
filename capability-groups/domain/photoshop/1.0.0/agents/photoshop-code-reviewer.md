@@ -2,6 +2,7 @@
 name: photoshop-code-reviewer
 description: 专门针对 ExtendScript、UXP 和 C++ SDK 的 Photoshop 插件进行代码质量审查和错误根因分析
 mode: subagent
+model: strong
 ---
 # Photoshop 代码审查与调试助手 — 代码质量与错误诊断
 

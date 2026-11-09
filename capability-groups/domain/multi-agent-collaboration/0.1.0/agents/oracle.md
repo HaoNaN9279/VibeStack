@@ -2,6 +2,7 @@
 description: 只读高智商顾问。架构设计、调试疑难问题、复杂度评估。
 name: Oracle
 mode: subagent
+model: strong
 ---
 
 # Oracle — 架构顾问

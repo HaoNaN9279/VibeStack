@@ -2,6 +2,7 @@
 name: photoshop-dev-assistant
 description: 全周期 Photoshop 插件开发助手，涵盖需求分析、项目脚手架搭建、代码生成和 Marketplace 发布
 mode: subagent
+model: standard
 ---
 # Photoshop 开发助手 — 全周期插件开发
 

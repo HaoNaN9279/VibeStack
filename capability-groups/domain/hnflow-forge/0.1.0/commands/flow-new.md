@@ -1,6 +1,7 @@
 ---
 name: flow-new
 description: 端到端制作 HNFlow 工作流与配套 VibeStack 能力组
+model: strong
 ---
 
 # `/flow-new` — 制作工作流 + 能力组

@@ -1,6 +1,7 @@
 ---
 name: photoshop-debug
 description: 提供 Photoshop 脚本与插件的运行和调试指导，涵盖 ExtendScript、UXP 和 C++ SDK
+model: strong
 ---
 
 ## `/photoshop-debug` — Photoshop 运行与调试指导

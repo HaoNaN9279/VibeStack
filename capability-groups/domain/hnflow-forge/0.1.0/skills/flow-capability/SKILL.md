@@ -83,9 +83,11 @@ capability-groups/domain/<name>/<version>/
 | --- | --- | --- |
 | 节点 `preset` | DSH 已注册的 preset（默认 allowlist `hnflow`、`standard`） | 只能选，不能新增；写错报 `preset-not-allowed` |
 | Agent 人设 | 能力组 `agents/*.md` | 影响会话系统提示，**不是** preset |
-| 节点 `model` | VibeStack 本机模型层 id | 只写层 id，层缺失即失败，不回落 |
+| 节点 `model` | VibeStack 平台模型层 id（`fast` / `standard` / `strong` / `vision`） | 只写层 id；可省略（继承当前路由）；层未在本机绑定则失败，不回落 |
+| 能力组 Agent / 命令 / 技能的 `model` | 同上 | 只写层 id；自定义层仅 DSH 可用，不能写进共享能力组 |
 
 所以：能力组给流程提供的是**知识与手法**，不是执行单元；流程节点的执行者仍是 preset 决定。
+层目录由 VibeStack 平台统一提供；能力组不得写 provider、具体模型名、温度或权限。
 
 ## 激活与依赖
 

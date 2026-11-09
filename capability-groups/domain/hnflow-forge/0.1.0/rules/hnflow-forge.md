@@ -29,7 +29,7 @@ name: hnflow-forge
 - `gate` 有出边时 `approved` / `rejected` / `modified` 三分支必须齐全。
 - `judge`（含 `verify.judge`）的 preset 不能与任一祖先 `agent` 的 preset 相同。
 - schema 只支持 `type` / `properties` / `required` / `additionalProperties` / `items` / `enum` / `const` / `oneOf`；顶层必须 `type: "object"`；同一 schema 禁 `type` + `oneOf` 同用。
-- `preset` 必须在宿主 allowlist（默认 `hnflow`、`standard`）；`model` 只写 VibeStack 层 id。
+- `preset` 必须在宿主 allowlist（默认 `hnflow`、`standard`）；`model` 只写 VibeStack 平台模型层 id（`fast` / `standard` / `strong` / `vision`）。
 - 节点不能内联工具或 persona；流程不表达权限。
 
 ## 人类专属

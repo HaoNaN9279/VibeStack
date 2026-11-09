@@ -34,6 +34,7 @@ import {
 } from './lib/agents.js'
 import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
+import { loadCatalog } from './lib/catalog.js'
 import { createUserMessage as createLocalUserMessage } from './lib/messages.js'
 import { normalizeMcpEntries, syncMcpServers } from './lib/mcp.js'
 import { createModelsRoute } from './lib/models-route.js'
@@ -65,7 +66,7 @@ try {
       role: z.string().default('preset'),
       host: z.boolean().default(true),
       modelsFile: z.string().default(''),
-      modelSelector: z.string().default('additive'),
+      modelSelector: z.string().default('replace'),
       applyModelOnAgent: z.boolean().default(true),
       applyModelOnCommand: z.boolean().default(true),
       applyModelOnSkill: z.boolean().default(true),
@@ -102,15 +103,17 @@ export const LAYER_COMMAND = 'vibestack-layer'
  * Root row: provide `ctx.vibestack` and the model-layer settings route.
  * @param {Record<string, unknown>} ctx - Cordis plugin context.
  * @param {ReturnType<typeof resolveConfig>} config - resolved row config.
+ * @param {{catalog?: object[], loadCatalog?: () => Promise<{layers: object[], default: string | null, warnings: string[]}>}} [deps] - injectable catalog seam for tests.
  * @returns {VibeStackService} the service instance.
  */
-export function applyCore(ctx, config) {
+export function applyCore(ctx, config, deps = {}) {
   const logger = ctx.logger
   const service = new VibeStackService({
     ctx,
     modelsFile: config.modelsFile,
     modelSelector: config.modelSelector,
     logger,
+    catalog: deps.catalog,
   })
   const cache = new PlanCache((cwd) => resolveProjectPlan(cwd, config))
   try {
@@ -118,7 +121,24 @@ export function applyCore(ctx, config) {
   } catch (error) {
     logger?.warn?.('vibestack: cannot provide ctx.vibestack: %o', error)
   }
-  void service.reload()
+
+  const load = deps.loadCatalog ?? (() => loadCatalog(config.command, undefined, config.timeoutMs))
+  service.catalogReady = (async () => {
+    if (!Array.isArray(deps.catalog)) {
+      try {
+        const result = await load()
+        for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
+        service.setCatalog(result.layers)
+        if (service.default === null && typeof result.default === 'string') {
+          service.default = result.default
+        }
+      } catch (error) {
+        logger?.warn?.('vibestack: cannot load the model layer catalog: %o', error)
+      }
+    }
+    await service.reload()
+  })()
+  void service.catalogReady
 
   /**
    * Resolve the persona roster for one live session without touching its log.
@@ -182,7 +202,7 @@ export function apply(ctx, rawConfig, deps = {}) {
   // The root core row provides `ctx.vibestack` and the settings route; it must
   // not resolve projects or touch a session.
   if (config.role === 'core') {
-    applyCore(ctx, config)
+    applyCore(ctx, config, deps)
     return
   }
 
@@ -290,8 +310,14 @@ export function apply(ctx, rawConfig, deps = {}) {
     }
     const layer = service.resolveLayer(id)
     if (layer === undefined) {
-      warn('vibestack: model layer %s ignored (%s): unknown layer', id, source)
-      return { ok: false, code: 'layer-unknown' }
+      const known = typeof service.hasLayer === 'function' && service.hasLayer(id)
+      warn(
+        'vibestack: model layer %s ignored (%s): %s',
+        id,
+        source,
+        known ? 'layer is not bound on this machine' : 'unknown layer',
+      )
+      return { ok: false, code: known ? 'layer-unbound' : 'layer-unknown' }
     }
     const controller = ctx.get('sessionController')
     if (typeof controller?.selectModel !== 'function') {
@@ -841,14 +867,16 @@ export function apply(ctx, rawConfig, deps = {}) {
           if (service === undefined) {
             return { kind: 'error', text: 'VibeStack: 模型层服务未加载（缺少 vibestack-core 行）' }
           }
-          const layers = service.listLayers()
+          const layers = service.listCatalog()
           if (layers.length === 0) {
-            return { kind: 'error', text: 'VibeStack: 没有模型层（在设置页「VibeStack 模型层」配置）' }
+            return { kind: 'error', text: 'VibeStack: 模型层目录不可用（检查 vibe-stack 安装与版本）' }
           }
           const input = String(rawInput ?? '').trim()
           const current = layerForSelection(service, selectionOf(agent.session))
           if (input.length === 0 || input === 'list') {
-            const names = layers.map((layer) => `${layer.id}（${layer.label}）`).join(', ')
+            const names = layers
+              .map((layer) => `${layer.id}（${layer.label}${layer.bound === false ? '，未绑定' : ''}）`)
+              .join(', ')
             return {
               kind: 'success',
               text: `VibeStack layers: ${names}（当前：${current?.id ?? '未映射'}）`,
@@ -857,6 +885,9 @@ export function apply(ctx, rawConfig, deps = {}) {
           const match = layers.find((layer) => layer.id.toLowerCase() === input.toLowerCase())
           if (match === undefined) {
             return { kind: 'error', text: `VibeStack: 未找到模型层 "${input}"` }
+          }
+          if (match.bound === false) {
+            return { kind: 'error', text: `VibeStack: 模型层 ${match.id} 尚未绑定本机模型（在设置页配置）` }
           }
           const applied = await applyModelFor(agent, match.id, 'layer-command')
           if (!applied.ok) {

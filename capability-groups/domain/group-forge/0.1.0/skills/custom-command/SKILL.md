@@ -64,13 +64,14 @@ vibe-stack sync
 
 ## 3. 命令定义方式
 
-每个命令文件必须以 YAML frontmatter 开头，frontmatter **必须包含** `name`、`description` 两个字段；`agent` 可选。
+每个命令文件必须以 YAML frontmatter 开头，frontmatter **必须包含** `name`、`description` 两个字段；`agent`、`model` 可选。
 
 ```markdown
 ---
 name: command-name                  # 必填：命令名称，建议与文件名一致
 description: 命令的简要描述（在命令列表中显示） # 必填
 agent: <agent-name>                 # 可选：指定执行代理
+model: standard                     # 可选：平台模型层 id
 ---
 
 这里是命令的提示词模板内容。支持：
@@ -85,9 +86,10 @@ agent: <agent-name>                 # 可选：指定执行代理
 适配器注入规则：
 
 - `name`、`description`、`agent` 映射为目标 Agent 的命令配置。
+- `model` 是平台模型层 id（`fast` / `standard` / `strong` / `vision`），由适配器解析为本机模型路由；省略时不主动切换。
 - 正文作为命令模板。
 - 缺少 `name` 或 `description` 的命令会被跳过并产生告警。
-- 无法映射的字段不注入。
+- 无法映射的字段不注入；不得写 provider、具体模型名、temperature、permission。
 
 ---
 
@@ -173,6 +175,7 @@ Check for performance issues and suggest improvements.
 | `name` | string | 是 | 命令名称，建议与文件名一致 |
 | `description` | string | 是 | 命令功能的简要描述，命令列表中显示 |
 | `agent` | string | 否 | 指定执行命令的代理 |
+| `model` | string | 否 | 平台模型层 id：`fast` / `standard` / `strong` / `vision` |
 | 正文 | string | 是 | 执行时发送给 LLM 的提示词模板 |
 
 ---
@@ -185,6 +188,7 @@ Check for performance issues and suggest improvements.
 ---
 name: auto-git-commit
 description: commit 当前项目变更（含 submodules 支持）
+model: standard
 ---
 
 # `/auto-git-commit` — 自动 Git 提交

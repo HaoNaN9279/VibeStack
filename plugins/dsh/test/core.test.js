@@ -8,6 +8,14 @@ import { test } from 'node:test'
 
 import { apply } from '../index.js'
 
+/** Platform catalog fixture. */
+const CATALOG = [
+  { id: 'fast', label: '快速', kind: 'speed', rank: 1 },
+  { id: 'standard', label: '标准', kind: 'balanced', rank: 2 },
+  { id: 'strong', label: '深度', kind: 'reasoning', rank: 3 },
+  { id: 'vision', label: '多模态', kind: 'multimodal', rank: 4 },
+]
+
 /**
  * Build a root-like context with provide/inject/connection.
  * @returns {Record<string, any>} context and captures.
@@ -46,15 +54,22 @@ test('the core row provides ctx.vibestack and registers the models route', async
   try {
     await writeFile(file, JSON.stringify({
       models: {
-        default: 'strong',
-        layers: [{ id: 'strong', label: '深度', provider: 'p', model: 'm' }],
+        default: 'standard',
+        bindings: {
+          dsh: {
+            fast: { provider: 'p', model: 'flash' },
+            standard: { provider: 'p', model: 'flash' },
+            strong: { provider: 'p', model: 'flash' },
+            vision: { provider: 'p', model: 'flash' },
+          },
+        },
       },
     }), 'utf8')
     const { ctx, provided, routes } = createCoreContext()
-    apply(ctx, { role: 'core', modelsFile: file, modelSelector: 'replace' })
+    apply(ctx, { role: 'core', modelsFile: file, modelSelector: 'replace' }, { catalog: CATALOG })
     const service = provided.get('vibestack')
     assert.ok(service)
-    assert.equal(service.apiVersion, 2)
+    assert.equal(service.apiVersion, 3)
     assert.equal(service.modelSelector, 'replace')
     assert.deepEqual(routes.map((route) => route.path).sort(), [
       '/api/vibestack/models',
@@ -64,8 +79,9 @@ test('the core row provides ctx.vibestack and registers the models route', async
     const response = await models.fetch(new Request('http://localhost/api/vibestack/models'))
     const payload = await response.json()
     assert.equal(payload.ok, true)
-    assert.deepEqual(payload.layers.map((layer) => layer.id), ['strong', 'flash'])
-    assert.equal(payload.default, 'strong')
+    assert.deepEqual(payload.layers.map((layer) => layer.id), ['fast', 'standard', 'strong', 'vision'])
+    assert.equal(payload.layers.every((layer) => layer.bound), true)
+    assert.equal(payload.default, 'standard')
     assert.equal(payload.selector, 'replace')
 
     const roster = routes.find((route) => route.path === '/api/vibestack/roster')

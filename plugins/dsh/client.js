@@ -111,6 +111,7 @@ window.__ModuleLoader__.load({
         cursor: "pointer"
       },
       itemActive: { background: "var(--dsw-alias-interactive-bg-hover, rgba(127,127,127,0.16))" },
+      itemDisabled: { opacity: 0.45, cursor: "default" },
       check: {
         flex: "none",
         width: "14px",
@@ -199,7 +200,7 @@ window.__ModuleLoader__.load({
 
     /**
      * Read the model-layer document from the host route.
-     * @returns {Promise<{layers: object[], default: string | null, warnings?: string[]}>} payload.
+     * @returns {Promise<{layers: object[], default: string | null, warnings?: string[], catalog?: object}>} payload.
      */
     async function readLayerConfig() {
       const response = await fetch(LAYERS_PATH, { credentials: "same-origin", cache: "no-store" });
@@ -212,7 +213,7 @@ window.__ModuleLoader__.load({
 
     /**
      * Write a model-layer document through the host route.
-     * @param {{layers: object[], default: string | null}} document - proposed document.
+     * @param {{bindings: object, custom: object[], default: string | null}} document - proposed bindings.
      * @returns {Promise<object>} payload.
      */
     async function writeLayerConfig(document) {
@@ -241,6 +242,9 @@ window.__ModuleLoader__.load({
       if (!selection || typeof selection !== "object") return undefined;
       return layers.find(
         (layer) =>
+          layer.bound !== false &&
+          typeof layer.provider === "string" &&
+          typeof layer.model === "string" &&
           layer.provider === selection.provider &&
           layer.model === selection.model &&
           (layer.reasoningEffort === undefined || layer.reasoningEffort === selection.reasoningEffort)
@@ -356,7 +360,7 @@ window.__ModuleLoader__.load({
       if (!visible) return null;
 
       const choose = async (layer) => {
-        if (busy || (current && current.id === layer.id)) {
+        if (busy || layer.bound === false || (current && current.id === layer.id)) {
           setOpen(false);
           return;
         }
@@ -439,7 +443,7 @@ window.__ModuleLoader__.load({
                 ),
                 error ? h("span", { style: styles.empty }, error) : null,
                 !error && layers.length === 0
-                  ? h("span", { style: styles.empty }, "未配置模型层（在设置中新增）")
+                  ? h("span", { style: styles.empty }, "模型层目录不可用（检查 vibe-stack 安装与版本）")
                   : layers.map((layer, index) =>
                       h(
                         "button",
@@ -448,8 +452,13 @@ window.__ModuleLoader__.load({
                           type: "button",
                           role: "menuitemradio",
                           "aria-checked": current !== undefined && current.id === layer.id,
+                          disabled: layer.bound === false,
                           tabIndex: -1,
-                          style: index === active ? Object.assign({}, styles.item, styles.itemActive) : styles.item,
+                          style: layer.bound === false
+                            ? Object.assign({}, styles.item, styles.itemDisabled)
+                            : index === active
+                              ? Object.assign({}, styles.item, styles.itemActive)
+                              : styles.item,
                           onMouseEnter: () => setActive(index),
                           onClick: () => void choose(layer)
                         },
@@ -458,7 +467,10 @@ window.__ModuleLoader__.load({
                           "span",
                           { style: styles.itemBody },
                           h("span", { style: styles.itemName }, layer.label, h("span", { style: styles.itemGroup }, layer.id)),
-                          h("span", { style: styles.itemDesc }, `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}`)
+                          h("span", { style: styles.itemDesc },
+                            layer.bound === false
+                              ? "未绑定本机模型（在设置页配置）"
+                              : `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}`)
                         )
                       )
                     )
@@ -505,45 +517,90 @@ window.__ModuleLoader__.load({
         void load();
       }, [load]);
 
+      const toBinding = (layer) => ({
+        provider: layer.provider,
+        model: layer.model,
+        ...(layer.reasoningEffort ? { reasoningEffort: layer.reasoningEffort } : {})
+      });
+
+      const toCustom = (layer) => ({
+        id: layer.id,
+        label: layer.label,
+        description: layer.description ?? "",
+        provider: layer.provider,
+        model: layer.model,
+        ...(layer.reasoningEffort ? { reasoningEffort: layer.reasoningEffort } : {})
+      });
+
+      const snapshot = (overrideId = null) => {
+        const bindings = {};
+        const custom = [];
+        for (const layer of layers) {
+          if (overrideId !== null && layer.id === overrideId) continue;
+          if (layer.custom) {
+            custom.push(toCustom(layer));
+          } else if (layer.bound !== false && layer.provider && layer.model) {
+            bindings[layer.id] = toBinding(layer);
+          }
+        }
+        return { bindings, custom };
+      };
+
+      const publish = async (nextBindings, nextCustom, nextDefault) => {
+        setBusy(true);
+        setMessage(null);
+        setError(null);
+        try {
+          const payload = await writeLayerConfig({
+            bindings: nextBindings,
+            custom: nextCustom,
+            default: nextDefault
+          });
+          setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+          setDefaultId(typeof payload.default === "string" ? payload.default : null);
+          setMessage("已保存");
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : String(failure));
+        } finally {
+          setBusy(false);
+        }
+      };
+
       const save = async () => {
         if (draft === null) return;
-        setBusy(true);
-        setMessage(null);
-        setError(null);
-        try {
-          const originalId = draft._originalId ?? draft.id;
-          const next = layers.filter((layer) => layer.id !== originalId).concat([draft]);
-          const nextDefault = defaultId === originalId ? draft.id : defaultId;
-          const payload = await writeLayerConfig({ layers: next, default: nextDefault });
-          setLayers(Array.isArray(payload.layers) ? payload.layers : next);
-          setDefaultId(typeof payload.default === "string" ? payload.default : null);
-          setDraft(null);
-          setMessage("已保存");
-        } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure));
-        } finally {
-          setBusy(false);
+        const originalId = draft._originalId ?? draft.id;
+        const { bindings, custom } = snapshot(originalId);
+        if (draft.custom) {
+          if (!draft.id) {
+            setError("自定义层需要 id");
+            return;
+          }
+          custom.push(toCustom(draft));
+        } else if (draft.provider && draft.model) {
+          bindings[draft.id] = toBinding(draft);
         }
+        const nextDefault = defaultId === originalId
+          ? (draft.provider && draft.model ? draft.id : null)
+          : defaultId;
+        await publish(bindings, custom, nextDefault);
+        setDraft(null);
       };
 
-      const publish = async (nextLayers, nextDefault) => {
-        setBusy(true);
-        setMessage(null);
-        setError(null);
-        try {
-          const payload = await writeLayerConfig({ layers: nextLayers, default: nextDefault });
-          setLayers(Array.isArray(payload.layers) ? payload.layers : nextLayers);
-          setDefaultId(typeof payload.default === "string" ? payload.default : null);
-          setMessage("已保存");
-        } catch (failure) {
-          setError(failure instanceof Error ? failure.message : String(failure));
-        } finally {
-          setBusy(false);
-        }
+      const removeCustom = async (layer) => {
+        const { bindings, custom } = snapshot(layer.id);
+        await publish(bindings, custom, defaultId === layer.id ? null : defaultId);
       };
 
-      const remove = (id) => publish(layers.filter((layer) => layer.id !== id), defaultId === id ? null : defaultId);
-      const makeDefault = (id) => publish(layers, defaultId === id ? null : id);
+      const clearBinding = async (layer) => {
+        const { bindings, custom } = snapshot(layer.id);
+        await publish(bindings, custom, defaultId === layer.id ? null : defaultId);
+      };
+
+      const makeDefault = async (layer) => {
+        if (layer.bound === false) return;
+        const { bindings, custom } = snapshot();
+        await publish(bindings, custom, defaultId === layer.id ? null : layer.id);
+      };
 
       const field = (key, placeholder, value, onInput, type = "text") =>
         h("input", {
@@ -572,11 +629,15 @@ window.__ModuleLoader__.load({
         borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.14))"
       };
 
+      const routeOf = (layer) => layer.bound === false
+        ? "未绑定本机模型"
+        : `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}`;
+
       return h(
         "div",
         { style: { display: "flex", flexDirection: "column", gap: "14px", padding: "4px 0 20px" } },
         h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)", lineHeight: "19px" } },
-          "模型层是用户级路由别名。能力组只写 model: <layer>；provider / model / effort 留在本机配置，不进入仓库。"),
+          "模型层目录由 VibeStack 平台统一提供。这里只为平台层绑定本机模型；自定义层仅 DSH 可用，不会进入能力组。能力组只写 model: <layer>。"),
         error ? h("div", { style: { color: "var(--dsw-alias-state-error-primary, #d33)", fontSize: "12px" } }, error) : null,
         message ? h("div", { style: { color: "var(--dsw-alias-state-success-primary, #2a7)", fontSize: "12px" } }, message) : null,
         catalog && !catalog.error
@@ -587,13 +648,14 @@ window.__ModuleLoader__.load({
                   : " · " + (catalog.unroutable ?? []).map((layer) => `${layer.id}: ${layer.reason}`).join("; ")))
           : null,
         layers.length === 0
-          ? h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "还没有模型层。")
+          ? h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "模型层目录不可用（检查 vibe-stack 安装与版本）。")
           : h("div", null, layers.map((layer) =>
               h("div", { key: layer.id, style: rowStyle },
                 h("button", {
                   type: "button",
-                  title: "设为默认层",
-                  onClick: () => void makeDefault(layer.id),
+                  title: layer.bound === false ? "未绑定，不能设为默认层" : "设为默认层",
+                  disabled: layer.bound === false || busy,
+                  onClick: () => void makeDefault(layer),
                   style: {
                     flex: "none",
                     width: "20px",
@@ -602,32 +664,46 @@ window.__ModuleLoader__.load({
                     border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.4))",
                     background: defaultId === layer.id ? "var(--dsw-alias-state-business-primary, #4a7)" : "transparent",
                     color: "transparent",
-                    cursor: "pointer"
+                    cursor: layer.bound === false ? "default" : "pointer"
                   }
                 }, "•"),
                 h("div", { style: { display: "flex", flexDirection: "column", minWidth: 0, flex: "1 1 auto" } },
-                  h("span", { style: { fontSize: "13px", fontWeight: 500 } }, `${layer.label} (${layer.id})`),
+                  h("span", { style: { fontSize: "13px", fontWeight: 500 } },
+                    `${layer.label} (${layer.id})${layer.custom ? " · 自定义" : ""}`),
                   h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)" } },
-                    `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}${defaultId === layer.id ? " · 默认" : ""}`)
+                    `${routeOf(layer)}${defaultId === layer.id ? " · 默认" : ""}`)
                 ),
                 h("button", { type: "button", onClick: () => setDraft({ ...layer, _originalId: layer.id }), style: smallButton }, "编辑"),
-                h("button", { type: "button", onClick: () => void remove(layer.id), style: smallButton }, "删除")
+                layer.custom
+                  ? h("button", { type: "button", disabled: busy, onClick: () => void removeCustom(layer), style: smallButton }, "删除")
+                  : layer.bound !== false
+                    ? h("button", { type: "button", disabled: busy, onClick: () => void clearBinding(layer), style: smallButton }, "清除绑定")
+                    : null
               )
             )),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
-          h("button", { type: "button", onClick: () => setDraft({ id: "", label: "", provider: "", model: "", reasoningEffort: "", description: "" }), style: primaryButton }, "新增模型层"),
+          h("button", {
+            type: "button",
+            onClick: () => setDraft({ id: "", label: "", description: "", provider: "", model: "", reasoningEffort: "", custom: true }),
+            style: primaryButton
+          }, "新增自定义层（仅 DSH）"),
           h("button", { type: "button", onClick: () => void load(), style: smallButton }, "检测路由 / 重新读取")
         ),
         draft === null
           ? null
           : h("div", { style: { display: "flex", flexDirection: "column", gap: "8px", padding: "12px", borderRadius: "var(--dsw-radius-md, 10px)", border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.2))" } },
-              h("div", { style: { fontSize: "12px", fontWeight: 600 } }, "编辑模型层"),
-              field("id", "id（小写 kebab，如 strong）", draft.id, (value) => setDraft({ ...draft, id: value })),
-              field("label", "显示名（如 深度）", draft.label, (value) => setDraft({ ...draft, label: value })),
+              h("div", { style: { fontSize: "12px", fontWeight: 600 } },
+                draft.custom ? "自定义层（仅 DSH）" : `平台层绑定：${draft.id}`),
+              draft.custom
+                ? h(react.Fragment, null,
+                    field("id", "id（小写 kebab，如 my-fast）", draft.id, (value) => setDraft({ ...draft, id: value })),
+                    field("label", "显示名", draft.label, (value) => setDraft({ ...draft, label: value })),
+                    field("description", "说明（可选）", draft.description, (value) => setDraft({ ...draft, description: value })))
+                : h("div", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)" } },
+                    `${draft.label} · 平台层 id 与名称不可修改`),
               field("provider", "provider（如 deepseek-account）", draft.provider, (value) => setDraft({ ...draft, provider: value })),
-              field("model", "model（如 deepseek-pro）", draft.model, (value) => setDraft({ ...draft, model: value })),
+              field("model", "model（如 deepseek-flash）", draft.model, (value) => setDraft({ ...draft, model: value })),
               field("reasoningEffort", "reasoningEffort（可选）", draft.reasoningEffort, (value) => setDraft({ ...draft, reasoningEffort: value })),
-              field("description", "说明（可选）", draft.description, (value) => setDraft({ ...draft, description: value })),
               h("div", { style: { display: "flex", gap: "8px" } },
                 h("button", { type: "button", disabled: busy, onClick: () => void save(), style: primaryButton }, busy ? "保存中…" : "保存"),
                 h("button", { type: "button", disabled: busy, onClick: () => setDraft(null), style: smallButton }, "取消")

@@ -64,8 +64,8 @@ dsh plugin --profile desktop remove dsh-vibestack
    当前工作区依赖的能力组的可选 Agent**（`mode` 为 `primary` / `all`；`subagent`-only
    留在名册中，不进入该菜单），并标注来源组。
    默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。选择会持久化。
-4. 输入框右下角的模型位替换为 **模型层** 选择（未配置时用内置 `flash` 通用层兜底）；
-   选层等价于切换会话模型路由。也可以用命令：
+4. 输入框右下角的模型位替换为 **模型层** 选择（目录由 VibeStack 平台提供，DSH 默认把
+   四层绑定到 `deepseek-account/deepseek-flash`）；选层等价于切换会话模型路由。也可以用命令：
 
 ```text
 /vibestack-agent           # 列出可选 Agent 与当前选择
@@ -97,38 +97,40 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 
 ### 模型层
 
-模型层把用户本机的 provider/model/reasoningEffort 打包成一个具名路由，能力组只写
-`model: <layer>`。层定义存放在全局配置 `~/.config/vibestack/config.json` 的
-`models` 段，不进入能力组、项目或会话日志；凭据仍由 DSH 管理。
+模型层是 VibeStack 平台级路由档位（`fast` / `standard` / `strong` / `vision`，默认
+`standard`）。层目录由 Python Core 定义，DSH 只负责本机绑定：
 
-```jsonc
+```text
+~/.config/vibestack/config.json
 {
   "models": {
-    "default": "strong",
-    "layers": [
-      { "id": "fast", "label": "快速", "provider": "deepseek-account",
-        "model": "deepseek-flash", "reasoningEffort": "low" },
-      { "id": "strong", "label": "深度", "provider": "deepseek-account",
-        "model": "deepseek-pro", "reasoningEffort": "high" }
-    ]
+    "default": "standard",
+    "bindings": {
+      "dsh": {
+        "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
+      }
+    }
   }
 }
 ```
 
-- 根级 `vibestack-core` 行注册 `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
-- 设置页 **VibeStack 模型层** 可增删改层、设默认层，并用 `catalog()` 检测哪些层当前可路由；
-  写入是原子替换。
-- **左下角始终是 Agent 选择**：列出 Core + 当前工作区能力组中 `mode != subagent` 的 Agent；
-  `subagent`-only 定义保留在名册中供子任务引用。
+- 根级 `vibestack-core` 行调用 `vibe-stack models catalog --json` 获取平台目录，注册
+  `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
+- `GET` 返回平台目录 + 本机绑定状态；`POST` 只接受 `bindings`、`custom` 与 `default`，
+  不接受新增/删除平台层。
+- 设置页 **VibeStack 模型层** 为平台层绑定本机模型，也可新增 `models.custom.dsh`
+  自定义层；自定义层**仅 DSH 可用**，不能写进共享能力组，也不能被其他 Agent 使用。
 - **右下角模型位替换为模型层选择**：`modelSelector: replace`（默认）用低 priority 遮蔽
   `conversation.input.model`；VibeStack 会话显示层，其它模式回退到实时原生模型目录。
   `modelSelector: additive` 可退回“保留原生模型位 + 左下角额外层控件”的兼容形态。
-- 未配置任何层时，服务提供内置通用层 `flash`：`deepseek-account / deepseek-flash`。
+- 未绑定层仍列出但不可应用；应用失败只告警，不阻断人设/命令/技能。
 - **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的
-  `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效；失败只告警，
-  不阻断人设/命令/技能。
+  `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效。
 - `models.default` 会在空白 VibeStack 会话首次 pre-step 应用一次；已有模型选择的会话
-  不会覆盖。子 Agent 会话不公开模型选择入口。
+  不覆盖。旧 `models.layers` 读取兼容，迁移用 `vibe-stack models migrate`。
 
 ### 能力组开发
 
@@ -212,7 +214,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 |---|---|---|
 | `role` | `preset` | `core`：根级服务/设置路由；`preset`：会话模式；`ui`：纯客户端行 |
 | `host` | `true` | `false` 时该行只提供客户端 UI（根级 `vibestack-ui` 行用） |
-| `modelsFile` | `''` | **core 行**：层文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
+| `modelsFile` | `''` | **core 行**：绑定文件；空则用全局 `~/.config/vibestack/config.json` 的 `models` 段 |
 | `modelSelector` | `replace` | **core 行**：`replace` 右下角原生模型位替换为层选择（非 VibeStack 会话回退原生目录）；`additive` 保留原生位并在左下角加层控件 |
 | `applyModelOnAgent` | `true` | 切换人设时应用其 `model` 层 |
 | `applyModelOnCommand` | `true` | 执行能力组命令时应用其 `model` 层 |
@@ -244,7 +246,7 @@ plugins/dsh/
 ├── cordis.patch.yml     # 只 insert：根级 core/UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（core / preset 两种角色）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / 缓存 / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 模型层 / 名册路由
+├── lib/                 # resolve / catalog / bindings / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 名册路由
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
@@ -262,8 +264,8 @@ node test/agents.test.js && node test/config.test.js && node test/commands.test.
   && node test/mcp.test.js && node test/names.test.js && node test/plan.test.js \
   && node test/plans.test.js && node test/resolve.test.js && node test/rules.test.js \
   && node test/skills.test.js && node test/repair.test.js && node test/plugin.test.js \
-  && node test/layers.test.js && node test/service.test.js && node test/models-route.test.js \
-  && node test/core.test.js
+  && node test/bindings.test.js && node test/catalog.test.js && node test/service.test.js \
+  && node test/models-route.test.js && node test/core.test.js
 ```
 
 `repair.test.js` 用合成的 v4 日志覆盖：补标记、保留 header 独立帧、幂等、拒绝撕裂尾部、

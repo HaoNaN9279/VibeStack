@@ -2,10 +2,11 @@
  * Exact Fetch route for the VibeStack model-layer settings page.
  *
  * GET  /api/vibestack/models  -> {ok, layers, default, warnings, catalog?}
- * POST /api/vibestack/models  -> validate, atomically write, reload
+ * POST /api/vibestack/models  -> validate bindings, atomically write, reload
  *
- * The route never exposes the config path or credentials; the service owns
- * both reads and writes.
+ * `layers` is the platform catalog annotated with this machine's bindings and
+ * DSH-only custom layers. The route never exposes the config path or
+ * credentials; the service owns both reads and writes.
  */
 
 import { saveModels } from './service.js'
@@ -27,6 +28,9 @@ export function createModelsRoute(options) {
     fetch: async (request) => {
       try {
         if (request.method === 'GET') {
+          if (service.catalogReady && typeof service.catalogReady.then === 'function') {
+            await service.catalogReady
+          }
           const snapshot = await service.reload()
           const catalog = await service.catalog(request.signal)
           return json({ ok: true, ...snapshot, selector: service.modelSelector, catalog })

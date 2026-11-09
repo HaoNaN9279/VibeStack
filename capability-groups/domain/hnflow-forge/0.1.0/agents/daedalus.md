@@ -2,6 +2,7 @@
 name: Daedalus
 description: HNFlow 工作流架构师。分析需求、拆分能力组与工作流的边界、编排节点与契约，产出可校验的流程定义和配套能力组。
 mode: primary
+model: strong
 ---
 
 # Daedalus — 流程建筑师

@@ -1,6 +1,7 @@
 ---
 name: flow-check
 description: 体检既有 HNFlow 流程及其配套能力组，跑离线 lint 与审查清单，输出问题清单
+model: strong
 ---
 
 # `/flow-check` — 流程体检

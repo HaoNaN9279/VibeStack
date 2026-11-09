@@ -1,6 +1,7 @@
 ---
 name: photoshop-generate
 description: 生成常见操作的 Photoshop ExtendScript/UXP 代码模板：图层操作、批处理、UI 组件和 manifest 配置
+model: standard
 ---
 
 # `/photoshop-generate` — Photoshop 代码生成

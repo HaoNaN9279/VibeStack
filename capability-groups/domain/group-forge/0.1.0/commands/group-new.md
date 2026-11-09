@@ -1,6 +1,7 @@
 ---
 name: group-new
 description: 新建一个 VibeStack 能力组骨架（group.json + 内容目录）并给出激活步骤
+model: standard
 ---
 
 # 新建能力组

@@ -11,7 +11,7 @@ name: group-authoring
 - Core：`capability-groups/core/<version>/`；领域：`capability-groups/domain/<name>/<version>/`。
 - 能力组只放 `group.json`、`rules/`、`agents/`、`commands/`、`skills/`、`references/`。
 - 不在能力组内创建 `mcp/`、`tools/`、`pyproject.toml` 或工具源码；工具放在仓库根部 `tools/<name>/<version>/`，由 `group.json` 的 `tools` 引用。
-- 不把模型、温度、权限写进 Agent / 命令 / 技能定义。
+- 能力组 Agent / 命令 / 技能只写可选的 `model: <layer id>`（平台默认层）；provider、具体模型名、温度、权限等宿主参数不写入。
 
 ## 版本与标识
 

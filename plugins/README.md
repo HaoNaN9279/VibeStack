@@ -1,8 +1,9 @@
 # Agent 插件
 
 Agent 插件是 VibeStack 与具体 Agent 工具之间的适配层。插件调用
-`vibe-stack resolve --json` 获取统一注入计划，再把计划映射到目标 Agent 的
-运行时配置。
+`vibe-stack resolve --json` 获取统一注入计划，并通过
+`vibe-stack models catalog --json` 获取平台模型层目录，再把计划与层映射到目标
+Agent 的运行时配置。
 
 插件不扫描能力组目录、不选择版本、不解析 frontmatter，也不实现 `extends`、
 覆盖顺序或内容校验。这些逻辑只存在于 Python resolver 中。
@@ -35,7 +36,7 @@ plugins/<agent>/
   "agent": "dsh",
   "version": "0.4.0",
   "entrypoint": "index.js",
-  "capabilities": ["rules", "agents", "commands", "skills", "mcp"]
+  "capabilities": ["rules", "agents", "commands", "skills", "mcp", "models"]
 }
 ```
 
@@ -55,6 +56,7 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 ## 3. 运行契约
 
 - 启动时调用 `vibe-stack resolve --json [--mode vibestack] --project <project>`。
+- 需要模型层时调用 `vibe-stack models catalog --json`；不在插件内定义层目录。
 - `vibe-stack` 必须已安装并在 `PATH` 中；自定义路径使用 `VIBESTACK_CLI`。
 - 调用超时默认 5 秒，可用 `VIBESTACK_RESOLVE_TIMEOUT_MS` 覆盖。
 - 一次启动只解析一次，之后复用缓存结果。
@@ -82,6 +84,8 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 | frontmatter 解析与校验 | 是 | 否 |
 | 同名 Agent / 命令 / MCP 合并 | 是 | 否 |
 | rules / skills 去重 | 是 | 映射时再兜底去重 |
+| 模型层目录 | 是（定义与校验） | 否（只读取） |
+| 层 → 本机模型绑定 | 否 | 是（按 `models.bindings.<agent>`） |
 | 目标 Agent 字段映射 | 否 | 是 |
 | 保留用户 model / permission | 否 | 是 |
 | 失败开放与日志 | 返回 warnings | 应用结果并记录 |
@@ -93,6 +97,10 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
   "schema_version": 2,
   "active": true,
   "mode": "vibestack",
+  "model_layers": [
+    { "id": "standard", "label": "标准", "rank": 2 }
+  ],
+  "model_default": "standard",
   "rules": [{ "name": "global", "path": "...", "group": "core" }],
   "skills": [{ "name": "caveman", "path": "...", "group": "core" }],
   "agents": {
@@ -120,9 +128,9 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 ```
 
 插件只提取映射所需字段：rules/skills 的 `path`，agents 的
-`description`/`mode`/`system`，commands 的 `description`/`agent`/`template`，
-以及 `mcp`。不得把 `source`、`group` 等诊断字段写入目标配置；`group` 只用于运行时
-命名空间与展示（如 DSH 的 `vibestack-<group>-<name>`）。
+`description`/`mode`/`system`/`model`，commands 的 `description`/`agent`/`template`/`model`，
+`model_layers`/`model_default`，以及 `mcp`。不得把 `source`、`group` 等诊断字段写入目标配置；
+`group` 只用于运行时命名空间与展示（如 DSH 的 `vibestack-<group>-<name>`）。
 
 ## 6. 目标 Agent 映射
 
@@ -133,6 +141,7 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 | agents | 主/子 Agent 定义机制；保留目标侧已有 model/permission |
 | commands | 命令或提示模板注册机制 |
 | MCP | MCP 服务器配置机制 |
+| models | 读取平台层目录；按 `models.bindings.<agent>` 绑定本机模型；未绑定层降级 |
 
 通用要求：
 
@@ -148,6 +157,7 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 - 命令与技能统一发布为 `vibestack-<group>-<name>`；Agent 保留原名并带 `group` 展示。
 - 命令 handler 在执行前校验当前工作区计划，领域组命令不会跨项目执行。
 - 子 Agent 会话继承同一 preset，按同一份并集生成名册。
+- 模型层目录来自 `vibe-stack models catalog --json`；能力组只写层 id，DSH 设置页只编辑本机绑定。
 - 详细实现见 [`dsh/README.md`](dsh/README.md)。
 
 ## 7. 安装与发布
@@ -180,7 +190,9 @@ vibe-stack plugin status dsh    # 显示清单声明的版本与入口
 - [ ] CLI 缺失、超时、非零退出、JSON 损坏时不阻断 Agent 启动。
 - [ ] rules、skills 路径正确追加并去重。
 - [ ] agents、commands、mcp 正确映射，诊断字段不进入目标配置。
-- [ ] 用户已有的 Agent `model`、`permission` 不被覆盖。
+- [ ] 用户已有的 Agent 宿主模型设置不被覆盖。
+- [ ] 模型层目录来自平台；未绑定层可展示但不可应用，失败不阻断会话。
+- [ ] 能力组未指定 `model` 时不切换会话模型。
 - [ ] Core 先于其他能力组加载。
 - [ ] `groups` 按数组顺序加载，`extends` 依赖优先。
 - [ ] 同名 Agent、命令、MCP 后加载者覆盖。
@@ -206,11 +218,12 @@ node plugins/dsh/test/plugin.test.js
 1. 创建 plugins/<agent>/
 2. 编写 plugin.json，声明 entrypoint 和支持的能力
 3. 实现 resolve CLI 调用、schema 校验和失败开放
-4. 按目标 Agent 的配置机制实现注入计划映射
-5. 添加默认技能 skills/vibestack/SKILL.md
-6. 编写测试，覆盖 API 成功、损坏 JSON、schema 不兼容、超时和幂等
-7. 按目标 Agent 的安装方式安装并验证；DSH 使用 dsh plugin add
-8. 在无 stack、有 stack、坏组和 CLI 缺失场景下手动验证
+4. 实现 `models` 能力：读取平台层目录与 `models.bindings.<agent>`，未绑定层降级
+5. 按目标 Agent 的配置机制实现注入计划映射
+6. 添加默认技能 skills/vibestack/SKILL.md
+7. 编写测试，覆盖 API 成功、损坏 JSON、schema 不兼容、超时和幂等
+8. 按目标 Agent 的安装方式安装并验证；DSH 使用 dsh plugin add
+9. 在无 stack、有 stack、坏组和 CLI 缺失场景下手动验证
 ```
 
 当前适配器：`dsh`。

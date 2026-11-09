@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG = Object.freeze({
   role: 'preset',
   /** `false` turns this row into the client-only UI row. */
   host: true,
-  /** Optional layer file; empty uses the global VibeStack config. */
+  /** Optional bindings file; empty uses the global VibeStack config. */
   modelsFile: '',
   /** `replace` shadows the model seat; `additive` keeps it and adds a layer control. */
   modelSelector: 'replace',

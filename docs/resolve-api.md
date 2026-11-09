@@ -14,7 +14,7 @@ vibe-stack resolve --json [--mode project|vibestack] [--api-version 1|2] --proje
 - `--mode` 默认 `project`：
   - `project`：历史行为；无 `.vibestack/stack.json` 时返回 `active=false`，不加载 Core。
   - `vibestack`：**Core 始终加载**；无 stack 时也返回 `active=true`，只含 Core。
-- `--api-version` 默认 `2`；`1` 输出旧形状（无 `mode`，agent/command/skill 不带 `model`），
+- `--api-version` 默认 `2`；`1` 输出旧形状（无 `mode`、无 `model_layers`/`model_default`，agent/command/skill 不带 `model`），
   用于老插件回退。
 - `stdout` 只包含 JSON，UTF-8 编码。
 - 命令只读，不创建或修改 `.vibestack/lock.json`。
@@ -28,6 +28,13 @@ vibe-stack resolve --json [--mode project|vibestack] [--api-version 1|2] --proje
   "schema_version": 2,
   "active": true,
   "mode": "vibestack",
+  "model_layers": [
+    { "id": "fast", "label": "快速", "description": "...", "kind": "speed", "rank": 1 },
+    { "id": "standard", "label": "标准", "description": "...", "kind": "balanced", "rank": 2 },
+    { "id": "strong", "label": "深度", "description": "...", "kind": "reasoning", "rank": 3 },
+    { "id": "vision", "label": "多模态", "description": "...", "kind": "multimodal", "rank": 4 }
+  ],
+  "model_default": "standard",
   "repository": "D:/workspace/work/VibeStack",
   "project": "D:/workspace/project",
   "core": {
@@ -79,6 +86,8 @@ vibe-stack resolve --json [--mode project|vibestack] [--api-version 1|2] --proje
 | `schema_version` | API 版本，当前为 `2` |
 | `active` | 计划是否生效；`mode=vibestack` 时始终为 `true` |
 | `mode` | `project` 或 `vibestack`；v1 响应视为 `project` |
+| `model_layers` | 平台模型层目录：`id` / `label` / `description` / `kind` / `rank`；v1 无此字段 |
+| `model_default` | 平台默认层 id，当前为 `standard`；v1 无此字段 |
 | `core` | 已解析的 Core 摘要；`project` 模式无 stack 时为 `null` |
 | `groups` | 已解析的领域组摘要，按加载顺序 |
 | `rules` | 已校验规则路径，按加载顺序追加 |
@@ -94,10 +103,10 @@ vibe-stack resolve --json [--mode project|vibestack] [--api-version 1|2] --proje
 的每一项都带 `group`，它是“Core + 当前工作区并集”的来源标识；DSH 插件用它生成
 `vibestack-<group>-<name>` 命名空间，并区分 Core 常驻命令与领域组命令。
 
-`model` 可选，语法为 `^[a-z0-9][a-z0-9_-]*$`、长度 ≤32。resolver 只校验语法，不校验层是否
-存在（层属于用户本机配置）；非法值写入 `warnings` 并省略该字段。DSH 插件把 `model` 当作
-模型中间层的层 id，在 Agent 选择、命令执行或用户 `/skill` 调用时解析为
-provider/model/reasoningEffort。
+`model` 可选，值必须是平台层 id（`fast` / `standard` / `strong` / `vision`），长度 ≤32。
+resolver 直接校验平台目录成员关系；未知或非法值写入 `warnings` 并省略该字段。层到
+provider/model/reasoningEffort 的绑定属于用户本机配置，由插件按 `model_layers` 解析。
+能力组不得写 provider、具体模型名、temperature、permission 等宿主参数。
 
 ## 解析规则
 
@@ -116,7 +125,7 @@ provider/model/reasoningEffort。
 | 类型 | 规则 |
 |---|---|
 | rules | 递归发现 `rules/**/*.md`；必须有 `name` |
-| `model` | Agent / 命令 / 技能可选；层 id 语法与长度校验，非法时告警并省略 |
+| `model` | Agent / 命令 / 技能可选；必须是平台模型层 id，未知或非法时告警并省略 |
 | agents | 单层 `agents/*.md`；必须有 `name`、`description`、`mode`，`mode` 只能是 `primary`、`subagent`、`all` |
 | commands | 单层 `commands/*.md`；必须有 `name`、`description`，`agent` 可选 |
 | skills | 目录内必须有 `SKILL.md`；`name` 匹配目录名和 `[a-z0-9]+(-[a-z0-9]+)*`；`description` 1-1024 字符；禁止 `metadata` |
@@ -126,13 +135,13 @@ provider/model/reasoningEffort。
 
 - rules、skills 追加并按路径去重。
 - agents、commands、mcp 同名后加载者覆盖。
-- 不注入 `model`、`temperature`、`permission`。
+- 不注入宿主模型参数（provider、具体模型名、temperature、permission）；只透传可选的层 id。
 - 单个文件或工具失败只跳过该项并告警。
 
 ## 兼容与失败策略
 
 - API 只做加法扩展；破坏性变更提升 `schema_version`。
-- v2 新增 `mode`；v1 响应按 `mode=project` 读取。
+- v2 新增 `mode`、平台 `model_layers` / `model_default`，以及 Agent / 命令 / 技能的可选 `model`；v1 响应按 `mode=project` 读取且无层字段。
 - DSH 插件接受 `schema_version` ∈ {1, 2}。v1 没有 `mode`，插件按 `project` 处理，
   因此不会获得“Core 常驻”语义；需要升级 CLI 后重新加载。
 - 插件必须校验 `schema_version`，不兼容时只加载默认技能。

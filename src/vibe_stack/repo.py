@@ -37,12 +37,18 @@ def read_global_config() -> dict[str, object]:
 
 
 def write_global_config(data: dict[str, object]) -> Path:
-    """Write the global VibeStack config and return its path."""
+    """Write the global VibeStack config atomically and return its path."""
     path = global_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink(missing_ok=True)
     return path
 
 

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from vibe_stack.errors import VibeStackError
+from vibe_stack.model_layers import DEFAULT_MODEL_LAYER
 
 
 @dataclass
@@ -211,13 +212,16 @@ class ResolvedPlan:
     mcp: dict[str, dict[str, object]]
     warnings: list[str]
     fingerprint: str
+    model_layers: list[dict[str, object]] = field(default_factory=list)
+    model_default: str = DEFAULT_MODEL_LAYER
     group_metas: list[GroupMeta] = field(default_factory=list, repr=False)
 
     def to_dict(self, api_version: int = 2) -> dict[str, object]:
         """Serialize the plan for one resolve API version.
 
-        v1 is the pre-mode/pre-model shape; v2 adds ``mode`` and the optional
-        ``model`` field on agents, commands, and skills.
+        v1 is the pre-mode/pre-model shape; v2 adds ``mode``, the optional
+        ``model`` field on agents, commands, and skills, and the platform model
+        layer catalog.
         """
         include_model = api_version >= 2
         data: dict[str, object] = {
@@ -243,6 +247,8 @@ class ResolvedPlan:
         }
         if api_version >= 2:
             data["mode"] = self.mode
+            data["model_layers"] = [dict(layer) for layer in self.model_layers]
+            data["model_default"] = self.model_default
         return data
 
 

@@ -1,6 +1,7 @@
 ---
 name: flow-split
 description: 只做需求分析与能力组/工作流边界拆分，输出方案不动文件
+model: strong
 ---
 
 # `/flow-split` — 需求拆分，不落笔

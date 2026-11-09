@@ -8,6 +8,15 @@ import sys
 from pathlib import Path
 
 from vibe_stack import __version__
+from vibe_stack.bindings import (
+    DEFAULT_AGENT,
+    bind_layer,
+    catalog_document,
+    migrate_legacy,
+    models_summary,
+    set_default_layer,
+    unbind_layer,
+)
 from vibe_stack.errors import VibeStackError
 from vibe_stack.loader import discover_groups, discover_tools, load_group
 from vibe_stack.plugin import discover_plugins, status as plugin_status
@@ -123,6 +132,28 @@ def build_parser() -> argparse.ArgumentParser:
     plugin_status_parser = plugin_sub.add_parser("status", help="adapter status")
     plugin_status_parser.add_argument("agent")
 
+    models = sub.add_parser("models", help="platform model layers and local bindings")
+    models_sub = models.add_subparsers(dest="models_command", required=True)
+    catalog = models_sub.add_parser("catalog", help="print the platform layer catalog")
+    catalog.add_argument("--json", action="store_true", help="write JSON")
+    show = models_sub.add_parser("show", help="print layers with local bindings")
+    show.add_argument("--agent", default=DEFAULT_AGENT, help="adapter name (default: dsh)")
+    show.add_argument("--json", action="store_true", help="write JSON")
+    bind = models_sub.add_parser("bind", help="bind one layer to a host route")
+    bind.add_argument("layer")
+    bind.add_argument("--agent", default=DEFAULT_AGENT, help="adapter name (default: dsh)")
+    bind.add_argument("--provider", required=True)
+    bind.add_argument("--model", required=True)
+    bind.add_argument("--effort", default="", help="optional reasoning effort")
+    unbind = models_sub.add_parser("unbind", help="remove one layer binding")
+    unbind.add_argument("layer")
+    unbind.add_argument("--agent", default=DEFAULT_AGENT, help="adapter name (default: dsh)")
+    default = models_sub.add_parser("default", help="set or clear the default layer")
+    default.add_argument("layer", help="layer id or 'none'")
+    default.add_argument("--agent", default=DEFAULT_AGENT, help="adapter name (default: dsh)")
+    migrate = models_sub.add_parser("migrate", help="convert legacy models.layers")
+    migrate.add_argument("--agent", default=DEFAULT_AGENT, help="adapter name (default: dsh)")
+
     return parser
 
 
@@ -131,6 +162,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "models":
+            return _models(args)
         repo = find_repo(getattr(args, "resolve_repo", None) or args.repo)
         if getattr(args, "resolve_project", None) is not None:
             args.project = args.resolve_project
@@ -306,6 +339,80 @@ def _resolve(
     for warning in plan.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0
+
+
+def _models(args: argparse.Namespace) -> int:
+    """Dispatch ``vibe-stack models`` commands without requiring a repository."""
+    command = args.models_command
+    if command == "catalog":
+        return _emit_models(catalog_document(), bool(args.json))
+    if command == "show":
+        return _emit_models(models_summary(args.agent), bool(args.json))
+    if command == "bind":
+        state = bind_layer(
+            args.layer,
+            agent=args.agent,
+            provider=args.provider,
+            model=args.model,
+            reasoning_effort=args.effort or None,
+        )
+        print(f"bound {args.layer} for {args.agent}")
+        _print_binding_warnings(state.warnings)
+        return 0
+    if command == "unbind":
+        state = unbind_layer(args.layer, agent=args.agent)
+        print(f"unbound {args.layer} for {args.agent}")
+        _print_binding_warnings(state.warnings)
+        return 0
+    if command == "default":
+        layer = None if args.layer == "none" else args.layer
+        state = set_default_layer(layer, agent=args.agent)
+        print(f"default: {state.default or '(none)'}")
+        _print_binding_warnings(state.warnings)
+        return 0
+    if command == "migrate":
+        state = migrate_legacy(agent=args.agent)
+        print(
+            f"migrated {len(state.bindings)} layer(s) for {args.agent}"
+            + (f"; default: {state.default}" if state.default else "")
+        )
+        _print_binding_warnings(state.warnings)
+        return 0
+    raise VibeStackError(f"unknown models command: {command}")
+
+
+def _emit_models(document: dict[str, object], as_json: bool) -> int:
+    """Render a catalog or binding summary."""
+    if as_json:
+        output = json.dumps(document, ensure_ascii=False, separators=(",", ":"))
+        sys.stdout.buffer.write((output + "\n").encode("utf-8"))
+        sys.stdout.buffer.flush()
+        return 0
+    print(f"default: {document.get('default', '')}")
+    if "agent" in document:
+        print(f"agent: {document['agent']}")
+    layers = document.get("layers")
+    for layer in layers if isinstance(layers, list) else []:
+        if not isinstance(layer, dict):
+            continue
+        binding = layer.get("binding")
+        if isinstance(binding, dict):
+            route = f"{binding.get('provider')}/{binding.get('model')}"
+            effort = binding.get("reasoningEffort")
+            if effort:
+                route = f"{route} · {effort}"
+        else:
+            route = "未绑定"
+        print(f"  {str(layer.get('id', '')):<10} {layer.get('label', '')}  {route}")
+    _print_binding_warnings(document.get("warnings", []))
+    return 0
+
+
+def _print_binding_warnings(warnings: object) -> None:
+    if not isinstance(warnings, list):
+        return
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
 
 
 def _tool(repo: Path, args: argparse.Namespace) -> int:

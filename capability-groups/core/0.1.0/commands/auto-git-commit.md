@@ -1,6 +1,7 @@
 ---
 name: auto-git-commit
 description: commit 当前项目变更（含 submodules 支持）
+model: standard
 ---
 
 # `/auto-git-commit` — 自动 Git 提交（含 Submodule 支持）

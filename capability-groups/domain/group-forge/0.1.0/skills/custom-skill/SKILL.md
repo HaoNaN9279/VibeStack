@@ -85,6 +85,7 @@ vibe-stack sync
 ---
 name: skill-name           # 必填：技能名称，符合命名规范
 description: 技能描述      # 必填：长度 1-1024 字符
+model: standard            # 可选：平台模型层 id（fast / standard / strong / vision）
 license: MIT               # 可选：许可证名称或许可证文件
 compatibility: 需要 Python 3.11+ 和 uv  # 可选：环境要求，1-500 字符
 allowed-tools: Bash(git:*) Read         # 可选，实验性：预批准的工具列表

@@ -6,7 +6,7 @@ license: MIT
 
 # Custom Group — 能力组制作指南
 
-能力组是 VibeStack 的能力容器。它只描述“用什么能力”，不携带工具源码、模型、凭据或 Agent 私有配置。本技能负责组这一层；组内具体内容分别由 `custom-rule`、`custom-agent`、`custom-command`、`custom-skill`、`custom-tool`、`custom-mcp` 负责。
+能力组是 VibeStack 的能力容器。它只描述“用什么能力”，不携带工具源码、宿主模型参数、凭据或 Agent 私有配置。本技能负责组这一层；组内具体内容分别由 `custom-rule`、`custom-agent`、`custom-command`、`custom-skill`、`custom-tool`、`custom-mcp` 负责。
 
 ---
 
@@ -44,7 +44,7 @@ capability-groups/domain/<name>/<version>/
 
 - 能力组内**不创建** `tools/`、`mcp/`、`pyproject.toml` 或工具源码。
 - MCP 是工具包的一种 provider，放在仓库根部 `tools/<name>/<version>/tool.json`，由 `group.json` 的 `tools` 引用。
-- 不写 Agent 的模型、温度、权限；这些属于运行时配置。
+- Agent / 命令 / 技能只写可选的模型层 id（`model:`）；provider、具体模型名、温度、权限属于运行时配置，不写入。
 - 不把内容复制到 `.dsh/` 等 Agent 私有目录。
 
 ---

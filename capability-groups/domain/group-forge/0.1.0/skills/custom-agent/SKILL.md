@@ -70,13 +70,14 @@ vibe-stack sync
 
 ## 3. 智能体定义方式
 
-每个 Agent Markdown 文件必须以 YAML frontmatter 开头，frontmatter **必须包含** `name`、`description`、`mode` 三个字段，缺一不可。
+每个 Agent Markdown 文件必须以 YAML frontmatter 开头，frontmatter **必须包含** `name`、`description`、`mode` 三个字段，缺一不可；`model` 可选。
 
 ```markdown
 ---
 name: agent-name          # 必填：Agent 名称，建议与文件名一致
 description: 简短描述智能体的功能和用途（必填）
 mode: primary|subagent|all  # 必填：primary / subagent / all
+model: standard            # 可选：平台模型层 id（fast / standard / strong / vision）
 ---
 
 # 智能体名称 — 角色描述
@@ -87,6 +88,7 @@ mode: primary|subagent|all  # 必填：primary / subagent / all
 适配器注入规则：
 
 - `name`、`description`、`mode` 映射为目标 Agent 的对应配置。
+- `model` 是平台模型层 id；适配器把它解析为本机模型路由。省略时不主动切换会话模型。
 - 正文作为系统提示词。
 - 缺少必填字段或 `mode` 非法的 Agent 会被跳过并产生告警。
 - 无法映射的字段不注入，不得写入能力组 Agent 定义。
@@ -100,6 +102,7 @@ mode: primary|subagent|all  # 必填：primary / subagent / all
 | `name` | 是 | Agent 名称，建议与文件名一致 |
 | `description` | 是 | 智能体被选择调用的依据，必须准确反映能力 |
 | `mode` | 是 | `primary` / `subagent` / `all` 之一 |
+| `model` | 否 | 平台模型层 id：`fast` / `standard` / `strong` / `vision` |
 
 `mode` 取值：
 
@@ -111,8 +114,9 @@ mode: primary|subagent|all  # 必填：primary / subagent / all
 
 硬性约束：
 
-- **不得**在能力组 Agent 中写 `model`、`temperature`、`permission`。
-- 模型、权限等运行参数由用户配置或调用方决定，能力组只提供角色定义。
+- **只允许**写 `model: <layer id>`；**不得**写 provider、具体模型名、`temperature`、`permission`、`reasoningEffort`。
+- `model` 可省略；省略表示继承会话当前模型路由，不主动切换。
+- 模型层到本机 provider/model 的绑定由用户配置，能力组只提供角色定义。
 
 ---
 
@@ -125,6 +129,7 @@ mode: primary|subagent|all  # 必填：primary / subagent / all
 name: Hermes
 description: 快速问答与轻量任务执行。文件查找、代码搜索、文档阅读、小型编辑任务。
 mode: primary
+model: fast
 ---
 
 # Hermes — 迅捷信使

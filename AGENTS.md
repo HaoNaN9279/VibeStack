@@ -27,8 +27,8 @@ tests/                                     # pytest
 8. 插件不得修改 Agent 的主配置文件或用户 profile 组合（DSH 的 `cordis.patch.yml` 只由插件自己的 bundle 提供）。
 9. 已发布版本目录不可修改；升级新增版本目录，`guid` 不变。
 10. 工具统一通过 `vibe-stack tool ...` 调用，不写死绝对路径。
-11. 模型参数（model、temperature、permission）不进入能力组 Agent 定义。
-12. 插件通过 `vibe-stack resolve --json [--mode vibestack]` 获取注入计划，不自行解析能力组目录、版本、`extends` 或 frontmatter。
+11. 能力组 Agent / 命令 / 技能只允许声明可选的 `model: <layer id>`（平台默认层 `fast` / `standard` / `strong` / `vision`）；provider、具体模型名、temperature、permission、reasoningEffort 等宿主参数不得进入能力组。
+12. 插件通过 `vibe-stack resolve --json [--mode vibestack]` 获取注入计划，通过 `vibe-stack models catalog --json` 获取模型层目录；不自行解析能力组目录、版本、`extends` 或 frontmatter。
 13. DSH 能力组命令与技能统一为 `vibestack-<group>-<name>`；会话的 Agent / 命令 / 技能列表是 Core + 当前工作区并集，子 Agent 会话沿用同一规则。
 
 ## Python 规范
@@ -46,7 +46,7 @@ tests/                                     # pytest
 - 每个 Agent 一个目录：`plugins/<agent>/`
 - `plugin.json` 描述入口与能力；DSH 适配器不声明复制式安装目标
 - 当前唯一适配器是 `plugins/dsh/`；安装由 `dsh plugin add` 完成
-- 插件只消费 `vibe-stack resolve --json`，只做目标 Agent 映射
+- 插件只消费 `vibe-stack resolve --json` 与 `vibe-stack models catalog --json`，只做目标 Agent 映射
 - 插件无第三方依赖，失败不得阻断 Agent 启动
 - 插件只在本目录内新增文件，不改能力组、工具包或用户 profile
 

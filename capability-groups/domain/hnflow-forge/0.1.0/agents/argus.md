@@ -2,6 +2,7 @@
 name: Argus
 description: HNFlow 流程与配套能力组的独立审查者。只读审查契约完整性、可运行性、人机边界与依赖闭合，输出问题清单，不修改文件。
 mode: subagent
+model: strong
 ---
 
 # Argus — 独立审查者

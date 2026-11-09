@@ -124,7 +124,7 @@ DSH 适配器把能力组命令/技能映射为 `vibestack-<group>-<name>`，会
 |---|---|
 | rules | 追加 |
 | skills | 追加路径 |
-| agents | 同名覆盖；插件合并时保留用户配置中的 model/permission |
+| agents | 同名覆盖；插件按层 id 应用模型，保留宿主侧其它配置 |
 | commands | 同名覆盖 |
 | mcp | 同名覆盖 |
 
@@ -207,11 +207,12 @@ dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
 
 ```bash
 vibe-stack resolve --json --mode vibestack --project <project>
+vibe-stack models catalog --json
 ```
 
 插件不读取能力组目录、不解析 frontmatter，也不实现版本选择、`extends`、
 覆盖顺序或内容校验。解析结果已经包含规则路径、技能路径、Agent/命令定义和
-MCP 配置。
+MCP 配置；模型层目录来自 `models catalog`。
 
 插件只负责：
 
@@ -219,7 +220,7 @@ MCP 配置。
 - 把 Agent 名册发布为会话投影，驱动左下角菜单与 persona 段落
 - 把命令/技能映射为 `vibestack-<group>-<name>`，命令模板以 `followup()` 投递
 - 按能力组工具引用动态挂载 MCP 子插件
-- 保留用户已有的 `model`、`temperature`、`permission`
+- 从平台模型层目录读取层，按 `models.bindings.<agent>` 绑定到本机模型
 - 告警记录和失败开放
 
 | VibeStack 计划 | DSH 机制 |
@@ -229,6 +230,7 @@ MCP 配置。
 | agents | 会话投影 + 系统提示词人设段 + 左下角菜单 |
 | commands | `ctx.commands.register()` + `followup()` |
 | mcp | 每台服务器挂载 `@deepseek-ai/dsh-mcp-client` 子插件 |
+| models | 平台层目录 + `models.bindings.dsh`；未绑定层降级 |
 
 失败处理：
 
@@ -252,20 +254,23 @@ MCP 配置。
   "repository": "D:/workspace/work/VibeStack",
   "core": { "name": "core", "version": "0.1.0" },
   "models": {
-    "default": "strong",
-    "layers": [
-      { "id": "fast", "label": "快速", "provider": "deepseek-account",
-        "model": "deepseek-flash", "reasoningEffort": "low" },
-      { "id": "strong", "label": "深度", "provider": "deepseek-account",
-        "model": "deepseek-pro", "reasoningEffort": "high" }
-    ]
+    "default": "standard",
+    "bindings": {
+      "dsh": {
+        "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
+        "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
+      }
+    }
   }
 }
 ```
 
-该文件属于 VibeStack：CLI 读取仓库/Core 配置，DSH 插件的 `vibestack-core` 行读取
-`models` 段并提供 `ctx.vibestack` 服务与 `/api/vibestack/models` 设置路由。能力组只写
-`model: <layer>`；provider / model / reasoningEffort 与凭据留在本机。
+该文件属于 VibeStack：CLI 读取仓库/Core 配置，并管理 `models` 绑定；各 Agent 插件读取
+`models.bindings.<agent>`，把层映射成宿主模型。层目录由 Python Core 定义，经
+`vibe-stack models catalog --json` 与 `resolve` 输出；能力组只写 `model: <layer>`。
+provider / model / reasoningEffort 与凭据留在本机。详见 [`model-layers.md`](model-layers.md)。
 
 ## 9. CLI
 
@@ -279,6 +284,7 @@ MCP 配置。
 | `deactivate` | 移除组 |
 | `sync` | 严格解析并写 `lock.json` |
 | `resolve --json` | 生成只读注入计划，供插件消费 |
+| `models catalog/show/bind/unbind/default/migrate` | 模型层目录与本机绑定管理 |
 | `tool list/run/serve/exec` | 工具入口 |
 | `plugin status/list` | 适配器自省（安装由 `dsh plugin add` 负责） |
 
