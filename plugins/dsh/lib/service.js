@@ -92,7 +92,8 @@ export class VibeStackService {
     this.logger = options.logger
     this.modelSelector = options.modelSelector === 'replace' ? 'replace' : 'additive'
     this.catalogLayers = []
-    this.bindings = defaultBindings()
+    this.bindings = {}
+    this.useDefaults = true
     this.custom = []
     this.default = null
     this.warnings = []
@@ -121,6 +122,9 @@ export class VibeStackService {
       }
       return true
     })
+    if (this.useDefaults) {
+      this.bindings = defaultBindings(this.catalogLayers.map((layer) => layer.id))
+    }
     this.warnings = [...this.warnings, ...warnings]
     for (const warning of warnings) this.logger?.warn?.(`vibestack: ${warning}`)
     this.digest = stateDigest({
@@ -227,7 +231,10 @@ export class VibeStackService {
     try {
       const reserved = new Set(this.catalogLayers.map((layer) => layer.id))
       const next = await readModels(this.#file, DEFAULT_AGENT, reserved)
-      this.bindings = next.bindings
+      this.useDefaults = next.useDefaults === true
+      this.bindings = this.useDefaults
+        ? defaultBindings(this.catalogLayers.map((layer) => layer.id))
+        : next.bindings
       this.custom = normalizeCustomLayers(next.custom, [], reserved)
       this.default = next.default
       this.warnings = [

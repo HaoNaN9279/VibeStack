@@ -60,15 +60,18 @@ test('normalizeCustomLayers rejects platform shadows and duplicates', () => {
   assert.match(warnings.join('\n'), /duplicate custom layer/)
 })
 
-test('a missing file exposes the four DSH default bindings', async () => {
+test('a missing file requests defaults derived from the platform catalog', async () => {
   const dir = await tempDir()
   try {
     const result = await readModels(path.join(dir, 'config.json'))
-    assert.deepEqual(Object.keys(result.bindings), ['fast', 'standard', 'strong', 'vision'])
+    assert.deepEqual(result.bindings, {})
+    assert.equal(result.useDefaults, true)
     assert.deepEqual(result.custom, [])
     assert.equal(result.default, null)
     assert.deepEqual(result.warnings, [])
-    assert.equal(defaultBindings().standard.model, 'deepseek-flash')
+    const defaults = defaultBindings(['fast', 'standard', 'strong', 'vision'])
+    assert.equal(defaults.standard.model, 'deepseek-flash')
+    assert.equal(defaults.vision.provider, 'deepseek-account')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -97,6 +100,7 @@ test('readModels reads bindings, custom layers, and a default', async () => {
     assert.equal(result.bindings.fast.model, 'm1')
     assert.equal(result.bindings.strong.reasoningEffort, 'high')
     assert.deepEqual(result.custom.map((layer) => layer.id), ['my-fast'])
+    assert.equal(result.useDefaults, false)
     assert.deepEqual(result.warnings, [])
   } finally {
     await rm(dir, { recursive: true, force: true })

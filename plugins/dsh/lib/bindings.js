@@ -23,23 +23,20 @@ export const CONFIG_RELATIVE = path.join('.config', 'vibestack', 'config.json')
 export const DEFAULT_AGENT = 'dsh'
 
 /**
- * DSH's current local defaults: all four platform layers route to DeepSeek
- * Flash. These are host bindings, not platform layer definitions.
+ * DSH's current local default route. The layer ids come from the platform
+ * catalog; these values only say how DSH binds them when no config exists.
  */
-export const DEFAULT_BINDINGS = Object.freeze({
-  fast: Object.freeze({ provider: 'deepseek-account', model: 'deepseek-flash' }),
-  standard: Object.freeze({ provider: 'deepseek-account', model: 'deepseek-flash' }),
-  strong: Object.freeze({ provider: 'deepseek-account', model: 'deepseek-flash' }),
-  vision: Object.freeze({ provider: 'deepseek-account', model: 'deepseek-flash' }),
-})
+export const DEFAULT_PROVIDER = 'deepseek-account'
+export const DEFAULT_MODEL = 'deepseek-flash'
 
 /**
- * Copy the DSH default bindings.
- * @returns {Record<string, {provider: string, model: string, reasoningEffort?: string}>} copy.
+ * Build default bindings for the given platform layer ids.
+ * @param {string[]} layerIds - ids from the platform catalog.
+ * @returns {Record<string, {provider: string, model: string}>} bindings.
  */
-export function defaultBindings() {
+export function defaultBindings(layerIds = []) {
   return Object.fromEntries(
-    Object.entries(DEFAULT_BINDINGS).map(([id, binding]) => [id, { ...binding }]),
+    layerIds.map((id) => [id, { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL }]),
   )
 }
 
@@ -197,7 +194,7 @@ export async function readModels(file, agent = DEFAULT_AGENT, reserved = new Set
     text = await readFile(file, 'utf8')
   } catch (error) {
     if (error?.code === 'ENOENT') {
-      return { bindings: defaultBindings(), custom: [], default: null, warnings, legacy: false }
+      return { bindings: {}, custom: [], default: null, warnings, legacy: false, useDefaults: true }
     }
     throw new Error(`cannot read ${file}: ${String(error?.message ?? error)}`)
   }
@@ -212,7 +209,7 @@ export async function readModels(file, agent = DEFAULT_AGENT, reserved = new Set
   const models = document.models
   if (models !== undefined && (models === null || typeof models !== 'object' || Array.isArray(models))) {
     warnings.push('models must be an object')
-    return { bindings: defaultBindings(), custom: [], default: null, warnings, legacy: false }
+    return { bindings: {}, custom: [], default: null, warnings, legacy: false, useDefaults: true }
   }
   const section = models ?? {}
   const allBindings = section.bindings
@@ -225,7 +222,8 @@ export async function readModels(file, agent = DEFAULT_AGENT, reserved = new Set
     raw = section.layers
     legacy = true
   }
-  const bindings = raw === undefined ? defaultBindings() : normalizeBindings(raw, warnings)
+  const bindings = raw === undefined ? {} : normalizeBindings(raw, warnings)
+  const useDefaults = raw === undefined
   const custom = normalizeCustomLayers(
     section.custom && typeof section.custom === 'object' && !Array.isArray(section.custom)
       ? section.custom[agent]
@@ -240,6 +238,7 @@ export async function readModels(file, agent = DEFAULT_AGENT, reserved = new Set
     default: wanted === 'flash' ? 'fast' : wanted.length > 0 ? wanted : null,
     warnings,
     legacy,
+    useDefaults,
   }
 }
 
