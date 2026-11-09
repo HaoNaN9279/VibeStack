@@ -79,12 +79,14 @@ vibe-stack tool serve <tool>      # MCP stdio
 `standard`。目录由 `vibe-stack models catalog --json` 提供；能力组 Agent / 命令 / 技能可以
 写可选的 `model: <layer>`，省略即继承当前会话路由。
 
-层到本机 provider/model/reasoningEffort 的绑定在 `~/.config/vibestack/config.json` 的
-`models.bindings.dsh`，DSH 默认把四层都绑定到 `deepseek-account/deepseek-flash`。设置页
-「VibeStack 模型层」为平台层绑定模型，也可新增仅在 DSH 可用的自定义层；自定义层不能写进
-共享能力组。输入框右下角的模型位切换当前会话的层，左下角始终是 Agent 选择。
-`/vibestack-layer` 可列出层，`/vibestack-layer strong` 直接切换。未绑定层只告警，不阻断
-提示词；层只影响会话路由，不改变工具、权限或沙箱。
+四层的默认 provider/model 在项目 `.vibestack/models.json`，当前仓库四层均为
+`deepseek-account/deepseek-flash`；本机可在 `~/.config/vibestack/config.json` 的
+`models.bindings.dsh` 逐层覆盖。`vibe-stack models show --json` 返回生效绑定、默认层与
+`config` 路径，DSH 消费它而不是自行解析项目文件。设置页「VibeStack 模型层」写本机覆盖，
+也可新增仅在 DSH 可用的自定义层；自定义层不能写进共享能力组。输入框右下角的模型位切换
+当前会话的层，左下角始终是 Agent 选择。`/vibestack-layer` 可列出层，
+`/vibestack-layer strong` 直接切换。未绑定层只告警，不阻断提示词；层只影响会话路由，不
+改变工具、权限或沙箱。
 
 ## 开发能力组
 

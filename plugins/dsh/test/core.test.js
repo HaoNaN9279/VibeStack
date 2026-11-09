@@ -93,3 +93,37 @@ test('the core row provides ctx.vibestack and registers the models route', async
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('the core row applies project defaults returned by models show', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'vibestack-core-'))
+  const file = path.join(dir, 'config.json')
+  try {
+    const bindings = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    const { ctx, provided } = createCoreContext()
+    apply(ctx, { role: 'core', modelsFile: file }, {
+      loadCatalog: async () => ({
+        layers: CATALOG,
+        bindings,
+        default: 'strong',
+        warnings: [],
+      }),
+    })
+    const service = provided.get('vibestack')
+    await service.catalogReady
+    assert.equal(service.defaultLayer(), 'strong')
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), [
+      'fast',
+      'standard',
+      'strong',
+      'vision',
+    ])
+    assert.equal(service.resolveLayer('fast').model, 'deepseek-flash')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

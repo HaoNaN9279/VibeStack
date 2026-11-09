@@ -1,8 +1,8 @@
 /**
  * The root `ctx.vibestack` service.
  *
- * It merges the platform model-layer catalog (read from
- * `vibe-stack models catalog --json`) with DSH's local bindings and DSH-only
+ * It merges the platform model-layer catalog and project defaults (read from
+ * `vibe-stack models show --json`) with DSH's local bindings and DSH-only
  * custom layers. It never defines a platform layer id or label; an unbound
  * platform layer is listed but cannot be applied.
  */
@@ -11,6 +11,7 @@ import {
   DEFAULT_AGENT,
   defaultBindings,
   normalizeBinding,
+  normalizeBindings,
   normalizeCustomLayers,
   readModels,
   resolveModelsPath,
@@ -77,6 +78,18 @@ export function normalizeCatalog(raw, warnings) {
 }
 
 /**
+ * Prefer project/platform routes; fall back to the static DSH defaults.
+ * @param {Record<string, object>} platformBindings - routes supplied by the CLI.
+ * @param {string[]} layerIds - platform layer ids.
+ * @returns {Record<string, object>} bindings.
+ */
+function defaultOrPlatform(platformBindings, layerIds) {
+  return Object.keys(platformBindings).length > 0
+    ? { ...platformBindings }
+    : defaultBindings(layerIds)
+}
+
+/**
  * Model-layer service with an in-memory snapshot.
  */
 export class VibeStackService {
@@ -93,6 +106,8 @@ export class VibeStackService {
     this.modelSelector = options.modelSelector === 'replace' ? 'replace' : 'additive'
     this.catalogLayers = []
     this.bindings = {}
+    this.platformBindings = {}
+    this.platformDefault = null
     this.useDefaults = true
     this.custom = []
     this.default = null
@@ -123,8 +138,46 @@ export class VibeStackService {
       return true
     })
     if (this.useDefaults) {
-      this.bindings = defaultBindings(this.catalogLayers.map((layer) => layer.id))
+      this.bindings = defaultOrPlatform(
+        this.platformBindings,
+        this.catalogLayers.map((layer) => layer.id),
+      )
     }
+    this.warnings = [...this.warnings, ...warnings]
+    for (const warning of warnings) this.logger?.warn?.(`vibestack: ${warning}`)
+    this.digest = stateDigest({
+      catalog: this.catalogLayers,
+      bindings: this.bindings,
+      custom: this.custom,
+      default: this.default,
+    })
+    return { layers: this.listCatalog(), warnings: [...warnings] }
+  }
+
+  /**
+   * Replace the project-level default routes supplied by the CLI.
+   * @param {unknown} raw - layer id to host route map.
+   * @param {unknown} [defaultLayer] - project default layer id.
+   * @returns {{layers: object[], warnings: string[]}} applied snapshot.
+   */
+  setPlatformBindings(raw, defaultLayer = null) {
+    const warnings = []
+    const platformIds = new Set(this.catalogLayers.map((layer) => layer.id))
+    const normalized = normalizeBindings(raw, warnings)
+    const bindings = {}
+    for (const [id, binding] of Object.entries(normalized)) {
+      if (platformIds.has(id)) bindings[id] = binding
+    }
+    this.platformBindings = bindings
+    const wanted = typeof defaultLayer === 'string' ? defaultLayer.trim() : ''
+    this.platformDefault = platformIds.has(wanted) ? wanted : null
+    if (this.useDefaults) {
+      this.bindings = defaultOrPlatform(
+        this.platformBindings,
+        this.catalogLayers.map((layer) => layer.id),
+      )
+    }
+    if (this.default === null) this.default = this.platformDefault
     this.warnings = [...this.warnings, ...warnings]
     for (const warning of warnings) this.logger?.warn?.(`vibestack: ${warning}`)
     this.digest = stateDigest({
@@ -232,11 +285,15 @@ export class VibeStackService {
       const reserved = new Set(this.catalogLayers.map((layer) => layer.id))
       const next = await readModels(this.#file, DEFAULT_AGENT, reserved)
       this.useDefaults = next.useDefaults === true
-      this.bindings = this.useDefaults
-        ? defaultBindings(this.catalogLayers.map((layer) => layer.id))
-        : next.bindings
+      if (this.useDefaults) {
+        this.bindings = defaultOrPlatform(this.platformBindings, [...reserved])
+      } else if (Object.keys(this.platformBindings).length > 0) {
+        this.bindings = { ...this.platformBindings, ...next.bindings }
+      } else {
+        this.bindings = next.bindings
+      }
       this.custom = normalizeCustomLayers(next.custom, [], reserved)
-      this.default = next.default
+      this.default = next.default ?? this.platformDefault
       this.warnings = [
         ...next.warnings,
         ...this.warnings.filter((warning) => !warning.startsWith('cannot load model layers')),

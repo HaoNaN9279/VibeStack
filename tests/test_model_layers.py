@@ -104,6 +104,86 @@ def test_checked_in_agents_and_commands_use_only_platform_layers() -> None:
     assert checked == 23
 
 
+def test_checked_in_project_model_defaults_bind_all_four_layers() -> None:
+    path = Path(__file__).resolve().parents[1] / ".vibestack/models.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert document["schema_version"] == 1
+    assert document["default"] == "standard"
+    bindings = document["bindings"]["dsh"]
+    assert sorted(bindings) == ["fast", "standard", "strong", "vision"]
+    for binding in bindings.values():
+        assert binding == {"provider": "deepseek-account", "model": "deepseek-flash"}
+
+
+def test_project_model_defaults_are_shown_and_overridden(
+    capsysbinary, monkeypatch
+) -> None:
+    models_path = Path.cwd() / ".vibestack/models.json"
+    monkeypatch.setenv("VIBESTACK_MODELS_FILE", str(models_path))
+    _write(
+        models_path,
+        json.dumps(
+            {
+                "schema_version": 1,
+                "default": "standard",
+                "bindings": {
+                    "dsh": {
+                        layer: {
+                            "provider": "deepseek-account",
+                            "model": "deepseek-flash",
+                        }
+                        for layer in ("fast", "standard", "strong", "vision")
+                    }
+                },
+            }
+        ),
+    )
+    assert main(["models", "show", "--json"]) == 0
+    payload = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert payload["config"] == str(models_path)
+    assert payload["default"] == "standard"
+    assert all(layer["bound"] for layer in payload["layers"])
+
+    write_global_config(
+        {
+            "models": {
+                "default": "strong",
+                "bindings": {
+                    "dsh": {
+                        "fast": {"provider": "local", "model": "small"},
+                    }
+                },
+            }
+        }
+    )
+    assert main(["models", "show", "--json"]) == 0
+    overridden = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert overridden["default"] == "strong"
+    assert overridden["layers"][0]["binding"] == {
+        "provider": "local",
+        "model": "small",
+    }
+    assert overridden["layers"][1]["binding"]["model"] == "deepseek-flash"
+
+    assert main(["models", "bind", "strong", "--provider", "p", "--model", "m"]) == 0
+    capsysbinary.readouterr()
+    stored = read_global_config()["models"]["bindings"]["dsh"]
+    assert set(stored) == {"fast", "strong"}
+
+
+def test_invalid_project_model_defaults_warn_without_blocking(
+    capsysbinary, monkeypatch
+) -> None:
+    models_path = Path.cwd() / ".vibestack/models.json"
+    monkeypatch.setenv("VIBESTACK_MODELS_FILE", str(models_path))
+    _write(models_path, "{")
+    assert main(["models", "show", "--json"]) == 0
+    payload = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
+    assert payload["config"] == str(models_path)
+    assert any("invalid JSON" in warning for warning in payload["warnings"])
+    assert all(layer["bound"] is False for layer in payload["layers"])
+
+
 def test_cli_models_catalog_does_not_require_a_repository(capsysbinary) -> None:
     assert main(["models", "catalog", "--json"]) == 0
     payload = json.loads(capsysbinary.readouterr().out.decode("utf-8"))

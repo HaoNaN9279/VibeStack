@@ -211,12 +211,12 @@ dsh plugin --profile desktop add "D:/workspace/VibeStack/plugins/dsh"
 
 ```bash
 vibe-stack resolve --json --mode vibestack --project <project>
-vibe-stack models catalog --json
+vibe-stack models show --json
 ```
 
 插件不读取能力组目录、不解析 frontmatter，也不实现版本选择、`extends`、
 覆盖顺序或内容校验。解析结果已经包含规则路径、技能路径、Agent/命令定义和
-MCP 配置；模型层目录来自 `models catalog`。
+MCP 配置；模型层目录、项目默认绑定、本机覆盖与默认层来自 `models show`。
 
 插件只负责：
 
@@ -224,7 +224,7 @@ MCP 配置；模型层目录来自 `models catalog`。
 - 把 Agent 名册发布为会话投影，驱动左下角菜单与 persona 段落
 - 把命令/技能映射为 `vibestack-<group>-<name>`，命令模板以 `followup()` 投递
 - 按能力组工具引用动态挂载 MCP 子插件
-- 从平台模型层目录读取层，按 `models.bindings.<agent>` 绑定到本机模型
+- 从 `models show` 读取层目录与生效绑定，项目默认由 `.vibestack/models.json` 提供，本机可逐层覆盖
 - 告警记录和失败开放
 
 | VibeStack 计划 | DSH 机制 |
@@ -234,7 +234,7 @@ MCP 配置；模型层目录来自 `models catalog`。
 | agents | 会话投影 + 系统提示词人设段 + 左下角菜单 |
 | commands | `ctx.commands.register()` + `followup()` |
 | mcp | 每台服务器挂载 `@deepseek-ai/dsh-mcp-client` 子插件 |
-| models | 平台层目录 + `models.bindings.dsh`；未绑定层降级 |
+| models | 平台层目录 + 项目默认绑定 + 本机 `models.bindings.dsh` 覆盖；未绑定层降级 |
 
 失败处理：
 
@@ -246,35 +246,49 @@ MCP 配置；模型层目录来自 `models catalog`。
 详细契约见 [`resolve-api.md`](resolve-api.md) 与
 [`dsh-plugin-plan.md`](dsh-plugin-plan.md)。
 
-## 8. 全局配置
+## 8. 模型默认与全局配置
 
-```text
-~/.config/vibestack/config.json
+项目根 `.vibestack/models.json` 提供四层默认路由，当前四层均为
+`deepseek-account/deepseek-flash`：
+
+```json
+{
+  "schema_version": 1,
+  "default": "standard",
+  "bindings": {
+    "dsh": {
+      "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
+    }
+  }
+}
 ```
+
+本机可在 `~/.config/vibestack/config.json` 逐层覆盖，不需要复制全部四层：
 
 ```json
 {
   "schema_version": 1,
   "repository": "D:/workspace/work/VibeStack",
-  "core": { "name": "core", "version": "0.1.0" },
   "models": {
-    "default": "standard",
+    "default": "strong",
     "bindings": {
       "dsh": {
-        "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
+        "fast": { "provider": "local", "model": "small" }
       }
     }
   }
 }
 ```
 
-该文件属于 VibeStack：CLI 读取仓库/Core 配置，并管理 `models` 绑定；各 Agent 插件读取
-`models.bindings.<agent>`，把层映射成宿主模型。层目录由 Python Core 定义，经
-`vibe-stack models catalog --json` 与 `resolve` 输出；能力组只写 `model: <layer>`。
-provider / model / reasoningEffort 与凭据留在本机。详见 [`model-layers.md`](model-layers.md)。
+该文件属于 VibeStack：CLI 读取仓库/Core 配置，并管理 `models` 绑定；各 Agent 插件通过
+`vibe-stack models show --json` 获取层目录、项目默认、本机覆盖与生效默认层。全局
+`models.bindings.<agent>` 覆盖项目同名层；默认层优先取全局，其次项目，最后内置
+`standard`。层目录由 Python Core 定义，能力组只写 `model: <layer>`。
+provider / model / reasoningEffort 与凭据留在项目模型文件或本机。详见
+[`model-layers.md`](model-layers.md)。
 
 ## 9. CLI
 
@@ -288,7 +302,7 @@ provider / model / reasoningEffort 与凭据留在本机。详见 [`model-layers
 | `deactivate` | 移除组 |
 | `sync` | 严格解析并写 `lock.json` |
 | `resolve --json` | 生成只读注入计划，供插件消费 |
-| `models catalog/show/bind/unbind/default/migrate` | 模型层目录与本机绑定管理 |
+| `models catalog/show/bind/unbind/default/migrate` | 模型层目录、项目默认与本机覆盖管理 |
 | `tool list/run/serve/exec` | 工具入口 |
 | `plugin status/list` | 适配器自省（安装由 `dsh plugin add` 负责） |
 

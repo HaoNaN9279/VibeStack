@@ -116,7 +116,7 @@ model: standard            # 可选：平台模型层 id（fast / standard / str
 
 - **只允许**写 `model: <layer id>`；**不得**写 provider、具体模型名、`temperature`、`permission`、`reasoningEffort`。
 - `model` 可省略；省略表示继承会话当前模型路由，不主动切换。
-- 模型层到本机 provider/model 的绑定由用户配置，能力组只提供角色定义。
+- 模型层的项目默认路由在 `.vibestack/models.json`，本机可逐层覆盖；能力组只提供角色定义。
 
 ---
 

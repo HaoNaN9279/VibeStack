@@ -98,29 +98,19 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 ### 模型层
 
 模型层是 VibeStack 平台级路由档位（`fast` / `standard` / `strong` / `vision`，默认
-`standard`）。层目录由 Python Core 定义，DSH 只负责本机绑定：
+`standard`）。层目录由 Python Core 定义；项目 `.vibestack/models.json` 提供四层默认绑定，
+DSH 的本机配置逐层覆盖：
 
 ```text
-~/.config/vibestack/config.json
-{
-  "models": {
-    "default": "standard",
-    "bindings": {
-      "dsh": {
-        "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
-      }
-    }
-  }
-}
+.vibestack/models.json                 # 项目默认，四层均 deepseek-account/deepseek-flash
+~/.config/vibestack/config.json        # 可选的本机覆盖
 ```
 
-- 根级 `vibestack-core` 行调用 `vibe-stack models catalog --json` 获取平台目录，注册
-  `ctx.vibestack` 服务与 `GET/POST /api/vibestack/models`。
-- `GET` 返回平台目录 + 本机绑定状态；`POST` 只接受 `bindings`、`custom` 与 `default`，
-  不接受新增/删除平台层。
+- 根级 `vibestack-core` 行调用 `vibe-stack models show --json` 获取平台目录、项目默认
+  绑定、本机覆盖与生效默认层，注册 `ctx.vibestack` 服务与
+  `GET/POST /api/vibestack/models`。
+- `GET` 返回平台目录 + 生效绑定状态；`POST` 只接受 `bindings`、`custom` 与 `default`，
+  不接受新增/删除平台层；写入只影响本机配置。
 - 设置页 **VibeStack 模型层** 为平台层绑定本机模型，也可新增 `models.custom.dsh`
   自定义层；自定义层**仅 DSH 可用**，不能写进共享能力组，也不能被其他 Agent 使用。
 - **右下角模型位替换为模型层选择**：`modelSelector: replace`（默认）用低 priority 遮蔽

@@ -86,7 +86,7 @@ model: standard                     # 可选：平台模型层 id
 适配器注入规则：
 
 - `name`、`description`、`agent` 映射为目标 Agent 的命令配置。
-- `model` 是平台模型层 id（`fast` / `standard` / `strong` / `vision`），由适配器解析为本机模型路由；省略时不主动切换。
+- `model` 是平台模型层 id（`fast` / `standard` / `strong` / `vision`），由适配器按项目 `.vibestack/models.json` 与本机覆盖解析为模型路由；省略时不主动切换。
 - 正文作为命令模板。
 - 缺少 `name` 或 `description` 的命令会被跳过并产生告警。
 - 无法映射的字段不注入；不得写 provider、具体模型名、temperature、permission。

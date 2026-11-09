@@ -1,14 +1,15 @@
 # 模型层
 
-模型层是 VibeStack 平台级的命名路由档位。能力组只引用层 id；层到具体模型的路由留在本机，由各 Agent 适配器绑定。这样同一份能力组可以在 DSH、HNFlow 或其他 Agent 上复用，不把 provider、模型名、凭据写进仓库。
+模型层是 VibeStack 平台级的命名路由档位。能力组只引用层 id；层到具体 provider/model 的默认路由放在项目的 `.vibestack/models.json`，本机可在全局配置中逐层覆盖。这样同一份能力组可以在 DSH、HNFlow 或其他 Agent 上复用，不把 provider、模型名、凭据写进能力组。
 
 ## 1. 归属
 
 | 内容 | 归属 |
 |---|---|
-| 层 id、名称、描述、排序、默认层 | Python Core（`src/vibe_stack/model_layers.py`） |
+| 层 id、名称、描述、排序、内置默认层 | Python Core（`src/vibe_stack/model_layers.py`） |
 | 能力组的 `model` 校验 | Resolver |
-| 层 → provider/model/reasoningEffort 绑定 | 本机全局配置，按 Agent 分域 |
+| 层 → provider/model/reasoningEffort 的项目默认值 | 项目 `.vibestack/models.json`，按 Agent 分域 |
+| 本机逐层覆盖 | 全局配置 `~/.config/vibestack/config.json`，按 Agent 分域 |
 | 把层应用到会话 | 各 Agent 插件 |
 | DSH 用户自定义层 | 仅 DSH 本机配置；不进入共享内容 |
 
@@ -21,7 +22,7 @@
 | `strong` | 深度 | 架构、规划、复杂调试、代码审查、疑难根因 |
 | `vision` | 多模态 | 图像、截图、PDF 页面理解 |
 
-DSH 当前默认绑定四层全部为 `deepseek-account / deepseek-flash`；用户可在设置页或 CLI 改绑定。
+四层现在默认全部绑定到 `deepseek-account / deepseek-flash`。默认层是 `standard`。
 
 ## 3. 能力组写法
 
@@ -59,60 +60,84 @@ model: fast
 
 `--api-version 1` 不输出这两个字段。未知层写入 `warnings` 并省略该条目的 `model`。
 
-## 5. 本机绑定
+## 5. 项目默认绑定
 
-全局配置 `~/.config/vibestack/config.json`：
+项目根目录的 `.vibestack/models.json` 暴露四层默认路由，可直接编辑：
 
 ```json
 {
-  "models": {
-    "default": "standard",
-    "bindings": {
-      "dsh": {
-        "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
-        "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
-      }
+  "schema_version": 1,
+  "default": "standard",
+  "bindings": {
+    "dsh": {
+      "fast": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "standard": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "strong": { "provider": "deepseek-account", "model": "deepseek-flash" },
+      "vision": { "provider": "deepseek-account", "model": "deepseek-flash" }
     }
   }
 }
 ```
 
 - `bindings.<agent>` 的 `<agent>` 与 `plugins/<agent>/plugin.json` 的 `agent` 一致。
-- `default` 是全局默认层。
-- 未绑定的平台层仍会出现在目录中，但不能应用。
-- 绑定文件由 CLI 与插件共同维护，写入必须原子替换；旧 `models.layers` 由 `vibe-stack models migrate` 迁移。
+- 查找顺序：显式项目参数 → `VIBESTACK_MODELS_FILE` → 当前目录逐级向上 → `VIBESTACK_HOME` / `VIBESTACK_REPO` → 全局配置的 `repository`。
+- `schema_version` 当前为 `1`；缺失时兼容读取。
+- 文件损坏、字段类型错误、未知层、缺少 provider/model 只产生 warning，不阻断启动。
+- 这是项目配置中唯一允许出现 provider/model 的文件；能力组仍不得包含宿主模型参数。
 
-DSH 自定义层放在 `models.custom.dsh`，只能通过 DSH 设置页或插件读写；其他 Agent 与共享能力组不可见。
+## 6. 本机覆盖
 
-## 6. CLI
+全局配置按层覆盖项目默认值，只需写要改的层：
+
+```json
+{
+  "models": {
+    "default": "strong",
+    "bindings": {
+      "dsh": {
+        "fast": { "provider": "local", "model": "small" }
+      }
+    }
+  }
+}
+```
+
+优先级：
+
+1. 每一层：全局 `models.bindings.<agent>.<layer>` 覆盖项目 `bindings.<agent>.<layer>`。
+2. 默认层：全局 `models.default` → 项目 `default` → 内置 `standard`。
+3. 未绑定的平台层仍出现在目录中，但不能应用。
+
+`models bind` / `unbind` / `default` 只写全局配置，不会把项目默认值复制进 home。旧 `models.layers` 读取兼容，迁移用 `vibe-stack models migrate`，`flash` → `fast`。DSH 自定义层放在 `models.custom.dsh`，仅 DSH 设置页或插件可读写。
+
+## 7. CLI
 
 ```bash
 vibe-stack models catalog [--json]                 # 平台层目录，不需要项目
-vibe-stack models show [--agent dsh] [--json]      # 目录 + 本机绑定
+vibe-stack models show [--agent dsh] [--json]      # 目录 + 生效绑定；有项目文件时带 config
 vibe-stack models bind <layer> --agent dsh --provider <p> --model <m> [--effort <e>]
 vibe-stack models unbind <layer> --agent dsh
 vibe-stack models default <layer|none>
 vibe-stack models migrate [--agent dsh]
 ```
 
-## 7. 适配器契约
+## 8. 适配器契约
 
 新增 Agent 适配器时必须：
 
 1. 从 `vibe-stack models catalog --json`（或 resolve 的 `model_layers`）读取层目录，不硬编码层 id、label、默认层。
-2. 读取 `models.bindings.<agent>`，或通过 CLI 读写；不同宿主不得共用一份 provider/model 映射。
+2. 从 `vibe-stack models show --json` 读取生效的 `layers[].binding`、`default` 与 `config`，不自行解析项目文件优先级。
 3. 未绑定层可以展示但不可应用；应用失败只告警，不阻断会话。
 4. 能力组未指定 `model` 时不切换会话模型。
 5. `plugin.json` 的 `capabilities` 声明 `models`；不支持时明确告警。
-6. 不得把 provider/model/temperature/permission 写入能力组、项目或 `.vibestack/`。
+6. 不得把 provider/model/temperature/permission 写入能力组；项目级默认只放在 `.vibestack/models.json`。
 
-## 8. 失败与迁移
+## 9. 失败与迁移
 
 | 情况 | 行为 |
 |---|---|
 | 层目录不可用 | 插件告警；会话照常启动；模型层功能禁用 |
+| 项目文件损坏或字段非法 | warning 并忽略该部分；仍可读全局绑定 |
 | 层未绑定 | 列出并标记“未绑定”；应用时告警 `layer-unbound` |
 | 绑定路由不在宿主目录 | 设置页/`catalog()` 标记不可路由；不自动改绑定 |
 | 旧 `models.layers` | 读取兼容并告警；`vibe-stack models migrate` 转为 `bindings.dsh`，`flash` → `fast` |

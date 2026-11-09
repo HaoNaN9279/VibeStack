@@ -25,6 +25,8 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIBESTACK_MODELS_FILE", str(tmp_path / "no-project-models.json"))
     return home
 
 

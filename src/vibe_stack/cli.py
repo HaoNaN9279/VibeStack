@@ -392,6 +392,8 @@ def _emit_models(document: dict[str, object], as_json: bool) -> int:
         sys.stdout.buffer.write((output + "\n").encode("utf-8"))
         sys.stdout.buffer.flush()
         return 0
+    if isinstance(document.get("config"), str):
+        print(f"config: {document['config']}")
     print(f"default: {document.get('default', '')}")
     if "agent" in document:
         print(f"agent: {document['agent']}")

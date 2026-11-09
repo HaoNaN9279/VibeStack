@@ -61,6 +61,56 @@ test('an empty config exposes all four platform layers bound to DSH defaults', a
   }
 })
 
+test('project defaults fill every layer and override the default layer', async () => {
+  const { service, dir } = await serviceWith({})
+  try {
+    const routes = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    service.setPlatformBindings(routes, 'strong')
+    await service.reload()
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), [
+      'fast',
+      'standard',
+      'strong',
+      'vision',
+    ])
+    assert.equal(service.defaultLayer(), 'strong')
+    assert.equal(service.resolveLayer('vision').model, 'deepseek-flash')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('local bindings override project defaults one layer at a time', async () => {
+  const { service, dir } = await serviceWith({
+    models: { bindings: { dsh: { fast: { provider: 'local', model: 'small' } } } },
+  })
+  try {
+    const routes = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    service.setPlatformBindings(routes, 'standard')
+    await service.reload()
+    assert.deepEqual(service.listLayers().map((layer) => layer.id), [
+      'fast',
+      'standard',
+      'strong',
+      'vision',
+    ])
+    assert.equal(service.resolveLayer('fast').model, 'small')
+    assert.equal(service.resolveLayer('standard').model, 'deepseek-flash')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('unbound platform layers stay listed but cannot be applied', async () => {
   const { service, dir } = await serviceWith({
     models: { bindings: { dsh: { fast: { provider: 'p', model: 'm1' } } } },

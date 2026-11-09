@@ -103,7 +103,7 @@ export const LAYER_COMMAND = 'vibestack-layer'
  * Root row: provide `ctx.vibestack` and the model-layer settings route.
  * @param {Record<string, unknown>} ctx - Cordis plugin context.
  * @param {ReturnType<typeof resolveConfig>} config - resolved row config.
- * @param {{catalog?: object[], loadCatalog?: () => Promise<{layers: object[], default: string | null, warnings: string[]}>}} [deps] - injectable catalog seam for tests.
+ * @param {{catalog?: object[], loadCatalog?: () => Promise<{layers: object[], bindings?: object, default: string | null, warnings: string[]}>}} [deps] - injectable catalog seam for tests.
  * @returns {VibeStackService} the service instance.
  */
 export function applyCore(ctx, config, deps = {}) {
@@ -129,9 +129,7 @@ export function applyCore(ctx, config, deps = {}) {
         const result = await load()
         for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
         service.setCatalog(result.layers)
-        if (service.default === null && typeof result.default === 'string') {
-          service.default = result.default
-        }
+        service.setPlatformBindings(result.bindings ?? {}, result.default)
       } catch (error) {
         logger?.warn?.('vibestack: cannot load the model layer catalog: %o', error)
       }

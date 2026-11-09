@@ -1,14 +1,18 @@
-"""Machine-local model-layer bindings in the global VibeStack config.
+"""Model-layer bindings from project defaults and the global config.
 
-The platform catalog owns layer ids and labels. This module only maps a layer
-id to a concrete host route (provider/model/reasoningEffort) for one agent
-adapter. Bindings live under ``models.bindings.<agent>`` so different hosts can
-use different model namespaces without sharing a mapping.
+The platform catalog owns layer ids and labels. This module maps a layer id to
+a concrete host route (provider/model/reasoningEffort) for one agent adapter.
+Project defaults live in ``.vibestack/models.json``; the machine-local
+``models.bindings.<agent>`` entries in the global config override them one
+layer at a time so different hosts can use different model namespaces.
 """
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from vibe_stack.errors import VibeStackError
 from vibe_stack.model_layers import (
@@ -23,6 +27,9 @@ from vibe_stack.repo import read_global_config, write_global_config
 DEFAULT_AGENT = "dsh"
 
 _MAX_ID = 32
+
+#: Project-level defaults, relative to a project root.
+PROJECT_MODELS_RELATIVE = Path(".vibestack") / "models.json"
 
 
 @dataclass
@@ -69,6 +76,44 @@ class ModelsState:
 def _models_section(data: dict[str, object]) -> dict[str, object]:
     models = data.get("models")
     return models if isinstance(models, dict) else {}
+
+
+def project_models_path(project: Path | None = None) -> Path | None:
+    """Locate the project-level ``.vibestack/models.json``.
+
+    An explicit project only checks that root. Without one,
+    ``VIBESTACK_MODELS_FILE`` wins, then the current directory and its parents
+    are searched, then ``VIBESTACK_HOME`` / ``VIBESTACK_REPO`` and the global
+    ``repository``.
+    """
+    if project is not None:
+        candidate = Path(project) / PROJECT_MODELS_RELATIVE
+        return candidate if candidate.is_file() else None
+
+    override = os.environ.get("VIBESTACK_MODELS_FILE", "").strip()
+    if override:
+        candidate = Path(override).expanduser()
+        return candidate if candidate.is_file() else None
+
+    start = Path.cwd().resolve()
+    for root in (start, *start.parents):
+        candidate = root / PROJECT_MODELS_RELATIVE
+        if candidate.is_file():
+            return candidate
+
+    for env_name in ("VIBESTACK_HOME", "VIBESTACK_REPO"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            candidate = Path(value).expanduser() / PROJECT_MODELS_RELATIVE
+            if candidate.is_file():
+                return candidate
+
+    configured = read_global_config().get("repository")
+    if isinstance(configured, str) and configured.strip():
+        candidate = Path(configured).expanduser() / PROJECT_MODELS_RELATIVE
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _valid_layer_id(value: str) -> bool:
@@ -169,19 +214,96 @@ def _normalize_entries(
     return result
 
 
-def read_models_state(
-    agent: str = DEFAULT_AGENT, data: dict[str, object] | None = None
-) -> ModelsState:
-    """Read and normalize one agent's bindings."""
-    document = read_global_config() if data is None else data
+def _normalize_default(value: object, warnings: list[str]) -> str | None:
+    default = frontmatter_text(value) or None
+    if default == "flash":
+        default = "fast"
+    if default is not None and not _valid_layer_id(default):
+        warnings.append(f"unknown default model layer: {default}")
+        return None
+    return default
+
+
+def _read_global_state(document: dict[str, object], agent: str) -> ModelsState:
     models = _models_section(document)
     warnings: list[str] = []
     raw, legacy = _read_raw_bindings(models, agent, warnings)
     bindings = _normalize_entries(raw, warnings, legacy=legacy)
-    default = frontmatter_text(models.get("default")) or None
-    if default == "flash":
-        default = "fast"
+    default = _normalize_default(models.get("default"), warnings)
     return ModelsState(default=default, bindings=bindings, warnings=warnings)
+
+
+def _read_project_state(
+    agent: str, project: Path | None = None
+) -> tuple[ModelsState, Path | None]:
+    path = project_models_path(project)
+    if path is None:
+        return ModelsState(default=None, bindings={}, warnings=[]), None
+    warnings: list[str] = []
+    try:
+        document = json.loads(path.read_text(encoding="utf-8-sig"))
+    except UnicodeDecodeError as exc:
+        warnings.append(f"invalid UTF-8 in project model defaults {path}: {exc}")
+        return ModelsState(default=None, bindings={}, warnings=warnings), path
+    except json.JSONDecodeError as exc:
+        warnings.append(f"invalid JSON in project model defaults {path}: {exc}")
+        return ModelsState(default=None, bindings={}, warnings=warnings), path
+    except OSError as exc:
+        warnings.append(f"cannot read project model defaults {path}: {exc}")
+        return ModelsState(default=None, bindings={}, warnings=warnings), path
+    if not isinstance(document, dict):
+        warnings.append(f"project model defaults {path} must be a JSON object")
+        return ModelsState(default=None, bindings={}, warnings=warnings), path
+
+    version = document.get("schema_version")
+    if version is not None and version != 1:
+        warnings.append(f"unsupported project model schema_version: {version}")
+
+    raw_bindings = document.get("bindings")
+    if raw_bindings is None:
+        raw_bindings = {}
+    if not isinstance(raw_bindings, dict):
+        warnings.append("project model defaults bindings must be an object")
+        raw_bindings = {}
+    raw = raw_bindings.get(agent)
+    if raw is None:
+        raw = {}
+    elif not isinstance(raw, (dict, list)):
+        warnings.append(f"project model defaults bindings.{agent} must be an object")
+        raw = {}
+
+    bindings = _normalize_entries(raw, warnings)
+    default = _normalize_default(document.get("default"), warnings)
+    return ModelsState(default=default, bindings=bindings, warnings=warnings), path
+
+
+def read_models_state(
+    agent: str = DEFAULT_AGENT,
+    data: dict[str, object] | None = None,
+    *,
+    include_project: bool = True,
+    project: Path | None = None,
+) -> ModelsState:
+    """Read project defaults, then overlay the machine-local bindings.
+
+    Project values are defaults; explicit ``models.bindings.<agent>`` entries
+    in the global config win one layer at a time. Mutating commands pass
+    ``include_project=False`` so they never copy project defaults into the
+    user's home config.
+    """
+    document = read_global_config() if data is None else data
+    global_state = _read_global_state(document, agent)
+    if not include_project:
+        return global_state
+
+    project_state, _ = _read_project_state(agent, project)
+    bindings = dict(project_state.bindings)
+    bindings.update(global_state.bindings)
+    return ModelsState(
+        default=global_state.default or project_state.default,
+        bindings=bindings,
+        warnings=[*project_state.warnings, *global_state.warnings],
+    )
 
 
 def _write_state(
@@ -224,7 +346,7 @@ def bind_layer(
         raise VibeStackError(f"unknown model layer: {layer_id}")
     if not provider.strip() or not model.strip():
         raise VibeStackError("provider and model must be non-empty")
-    state = read_models_state(agent)
+    state = read_models_state(agent, include_project=False)
     state.bindings[layer_id] = LayerBinding(
         provider=provider.strip(),
         model=model.strip(),
@@ -237,7 +359,7 @@ def unbind_layer(layer_id: str, *, agent: str = DEFAULT_AGENT) -> ModelsState:
     """Remove one layer binding."""
     if not _valid_layer_id(layer_id):
         raise VibeStackError(f"unknown model layer: {layer_id}")
-    state = read_models_state(agent)
+    state = read_models_state(agent, include_project=False)
     state.bindings.pop(layer_id, None)
     return _write_state(agent, state.bindings, state.default, keep_default=False)
 
@@ -248,7 +370,7 @@ def set_default_layer(
     """Set or clear the global default layer."""
     if layer_id is not None and not _valid_layer_id(layer_id):
         raise VibeStackError(f"unknown model layer: {layer_id}")
-    state = read_models_state(agent)
+    state = read_models_state(agent, include_project=False)
     return _write_state(agent, state.bindings, layer_id)
 
 
@@ -292,13 +414,17 @@ def migrate_legacy(*, agent: str = DEFAULT_AGENT) -> ModelsState:
 def models_summary(agent: str = DEFAULT_AGENT) -> dict[str, object]:
     """Return a JSON-ready catalog plus bindings for one agent."""
     state = read_models_state(agent)
-    return {
+    config = project_models_path()
+    document: dict[str, object] = {
         "schema_version": 1,
         "agent": agent,
         "default": state.default or DEFAULT_MODEL_LAYER,
         "layers": state.layers(),
         "warnings": state.warnings,
     }
+    if config is not None:
+        document["config"] = str(config)
+    return document
 
 
 def catalog_document() -> dict[str, object]:
@@ -316,11 +442,13 @@ __all__ = [
     "LayerBinding",
     "MODEL_LAYER_IDS",
     "ModelsState",
+    "PROJECT_MODELS_RELATIVE",
     "bind_layer",
     "catalog_document",
     "is_model_layer",
     "migrate_legacy",
     "models_summary",
+    "project_models_path",
     "read_models_state",
     "set_default_layer",
     "unbind_layer",

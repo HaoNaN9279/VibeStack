@@ -9,14 +9,36 @@ const PAYLOAD = {
   schema_version: 1,
   default: 'standard',
   layers: [
-    { id: 'fast', label: '快速', description: 'quick', kind: 'speed', rank: 1 },
-    { id: 'standard', label: '标准', description: 'default', kind: 'balanced', rank: 2 },
+    {
+      id: 'fast',
+      label: '快速',
+      description: 'quick',
+      kind: 'speed',
+      rank: 1,
+      binding: { provider: 'deepseek-account', model: 'deepseek-flash' },
+    },
+    {
+      id: 'standard',
+      label: '标准',
+      description: 'default',
+      kind: 'balanced',
+      rank: 2,
+      binding: { provider: 'deepseek-account', model: 'deepseek-flash', reasoningEffort: 'high' },
+    },
   ],
 }
 
 test('parseCatalog accepts the platform payload', () => {
   const catalog = parseCatalog(JSON.stringify(PAYLOAD))
   assert.deepEqual(catalog.layers.map((layer) => layer.id), ['fast', 'standard'])
+  assert.deepEqual(catalog.bindings, {
+    fast: { provider: 'deepseek-account', model: 'deepseek-flash' },
+    standard: {
+      provider: 'deepseek-account',
+      model: 'deepseek-flash',
+      reasoningEffort: 'high',
+    },
+  })
   assert.equal(catalog.default, 'standard')
   assert.deepEqual(catalog.warnings, [])
 })
@@ -36,10 +58,12 @@ test('loadCatalog uses the catalog argv and falls back on failure', async () => 
   assert.deepEqual(calls, [['vibe-stack', [...CATALOG_ARGS]]])
   assert.equal(result.default, 'standard')
   assert.equal(result.layers.length, 2)
+  assert.equal(result.bindings.fast.model, 'deepseek-flash')
 
   const missing = await loadCatalog('missing', async () => {
     throw Object.assign(new Error('not found'), { code: 'ENOENT' })
   })
   assert.deepEqual(missing.layers, [])
+  assert.deepEqual(missing.bindings, {})
   assert.match(missing.warnings.join('\n'), /failed/)
 })

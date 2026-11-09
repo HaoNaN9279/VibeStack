@@ -226,11 +226,11 @@ vibe-stack plugin status dsh
 ### 模型层
 
 模型层是平台级路由档位（`fast` / `standard` / `strong` / `vision`，默认 `standard`），
-层目录由 `vibe-stack models catalog` 提供。能力组只写可选的 `model: <layer>`；层的
-provider/model/reasoningEffort 绑定保存在本机 `~/.config/vibestack/config.json` 的
-`models.bindings.<agent>`，由各 Agent 插件读取。DSH 设置页可为平台层绑定本机模型，也可
-新增仅在 DSH 可用的自定义层；输入框右下角的模型位切换当前会话的层，左下角保持 Agent 选择。
-详见 [`docs/model-layers.md`](docs/model-layers.md)。
+层目录由 `vibe-stack models catalog` 提供。能力组只写可选的 `model: <layer>`；四层的
+默认 provider/model 放在项目 `.vibestack/models.json`，本机再用
+`~/.config/vibestack/config.json` 的 `models.bindings.<agent>` 逐层覆盖。DSH 设置页可为
+平台层绑定本机模型，也可新增仅在 DSH 可用的自定义层；输入框右下角的模型位切换当前会话
+的层，左下角保持 Agent 选择。详见 [`docs/model-layers.md`](docs/model-layers.md)。
 
 ## CLI
 
