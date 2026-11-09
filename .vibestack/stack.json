@@ -5,6 +5,10 @@
     {
       "name": "group-forge",
       "version": "0.1.0"
+    },
+    {
+      "name": "vibestack-dev",
+      "version": "1.0.0"
     }
   ],
   "core": {

@@ -18,6 +18,7 @@ name: unity
 
 ## MCP 工具使用
 
+- 当当前unity项目没有安装mcp时，提醒用户安装，地址：https://github.com/CoplayDev/unity-mcp/tree/main。
 - 任何 unity 中的操作**优先**使用 unity MCP ，如果该 MCP 工具无法实现，则先向用户汇报，再尝试其他方法。
 - 需要对修改进行测试时，使用 unity MCP 工具来触发编译、调用Editor工具、读取Console信息来实现测试循环。
 - 修改Assets目录下的代码文件时，可以使用任意外部工具，如bash等，但是**绝对禁止**使用外部工具直接修改代码文件名、类名等。
