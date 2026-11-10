@@ -19,10 +19,12 @@ export { validCommandName }
  * @param {Record<string, unknown>} plan - normalized resolve plan.
  * @param {{prefix?: string, maxLength?: number}} [options] - namespace options.
  * @param {string[]} [warnings] - collector for dropped or colliding entries.
- * @returns {{name: string, canonical: string, group: string, description: string, template: string, model: string}[]} usable commands.
+ * @returns {{name: string, canonical: string, group: string, module: string, description: string, template: string, model: string}[]} usable commands.
  */
 export function commandEntries(plan, options = {}, warnings = []) {
   const commands = plan?.commands && typeof plan.commands === 'object' ? plan.commands : {}
+  const published = plan?.names && typeof plan.names === 'object' ? plan.names : {}
+  const assigned = published.commands && typeof published.commands === 'object' ? published.commands : {}
   const entries = []
   const seen = new Set()
   for (const [name, value] of Object.entries(commands)) {
@@ -31,7 +33,12 @@ export function commandEntries(plan, options = {}, warnings = []) {
     const template = typeof value.template === 'string' ? value.template : ''
     if (description.length === 0 || template.length === 0) continue
     const group = typeof value.group === 'string' && value.group.length > 0 ? value.group : 'core'
-    const canonical = canonicalName(options.prefix, group, name, options)
+    const module = typeof value.module === 'string' ? value.module : ''
+    const id = typeof value.id === 'string' && value.id.length > 0 ? value.id : ''
+    const mapped = id.length > 0 && typeof assigned[id] === 'string' ? assigned[id] : ''
+    const canonical = mapped.length > 0
+      ? mapped
+      : canonicalName(options.prefix, group, name, { ...options, module })
     if (canonical.length === 0) {
       warnings.push(`command ${group}/${name} has no usable name`)
       continue
@@ -49,6 +56,7 @@ export function commandEntries(plan, options = {}, warnings = []) {
       name,
       canonical,
       group,
+      module,
       description,
       template,
       model: typeof value.model === 'string' ? value.model : '',

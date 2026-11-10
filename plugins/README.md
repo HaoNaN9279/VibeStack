@@ -80,6 +80,7 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 |---|---|---|
 | 定位仓库和 stack | 是 | 否 |
 | Core / groups / extends 顺序 | 是 | 否 |
+| 模块发现、选择与 depends 排序 | 是 | 否 |
 | 版本选择与去重 | 是 | 否 |
 | frontmatter 解析与校验 | 是 | 否 |
 | 同名 Agent / 命令 / MCP 合并 | 是 | 否 |
@@ -101,36 +102,66 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
     { "id": "standard", "label": "标准", "rank": 2 }
   ],
   "model_default": "standard",
-  "rules": [{ "name": "global", "path": "...", "group": "core" }],
-  "skills": [{ "name": "caveman", "path": "...", "group": "core" }],
+  "rules": [
+    {
+      "name": "global",
+      "id": "core/global",
+      "path": "...",
+      "group": "core",
+      "module": "",
+      "kind": "rule",
+      "scope": "global",
+      "paths": [],
+      "always": true,
+      "priority": 0
+    }
+  ],
+  "skills": [{ "name": "caveman", "id": "core/caveman", "path": "...", "group": "core", "module": "" }],
   "agents": {
     "Athena": {
+      "name": "Athena",
+      "id": "core/Athena",
       "description": "...",
       "mode": "all",
       "system": "...",
+      "system_path": "...",
       "source": "...",
-      "group": "core"
+      "group": "core",
+      "module": "",
+      "label": "core"
     }
   },
   "commands": {
     "auto-git-commit": {
+      "name": "auto-git-commit",
+      "id": "core/auto-git-commit",
       "description": "...",
       "template": "...",
+      "template_path": "...",
       "source": "...",
-      "group": "core"
+      "group": "core",
+      "module": ""
     }
   },
   "mcp": {
     "vibe:core_demo_mcp": { "type": "remote", "url": "..." }
   },
+  "names": {
+    "agents": { "core/Athena": "Athena" },
+    "commands": { "core/auto-git-commit": "vibestack-core-auto-git-commit" },
+    "skills": { "core/caveman": "vibestack-core-caveman" }
+  },
   "warnings": []
 }
 ```
 
-插件只提取映射所需字段：rules/skills 的 `path`，agents 的
-`description`/`mode`/`system`/`model`，commands 的 `description`/`agent`/`template`/`model`，
-`model_layers`/`model_default`，以及 `mcp`。不得把 `source`、`group` 等诊断字段写入目标配置；
-`group` 只用于运行时命名空间与展示（如 DSH 的 `vibestack-<group>-<name>`）。
+插件只提取映射所需字段：rules 的 `path`/`scope`/`paths`/`always`/`priority`，skills 与
+commands 的 `path`/`id`/`module`，agents 的 `description`/`mode`/`system`/`model`，
+`names` 里的宿主名映射，以及 `model_layers`/`model_default`/`mcp`。不得把 `source`、
+`group` 等诊断字段写入目标配置；`group` 与 `module` 只用于运行时命名空间与展示。
+
+规则正文按 `scope` 与当前工作目录过滤，`always: false` 只显示索引。宿主名优先读
+`names`，缺失时才由插件按 `vibestack-<group>[-<alias>]-<name>` 兜底拼接。
 
 ## 6. 目标 Agent 映射
 
@@ -154,7 +185,8 @@ DSH 适配器没有 `install` 字段：安装由 `dsh plugin add` 完成，VibeS
 ### DeepSeek Harness（`plugins/dsh`）
 
 - 模式：`--mode vibestack`，Core 常驻；Agent / 命令 / 技能 = Core + 当前工作区并集。
-- 命令与技能统一发布为 `vibestack-<group>-<name>`；Agent 保留原名并带 `group` 展示。
+- 命令与技能统一发布为 `vibestack-<group>[-<module-alias>]-<name>`；Agent 保留原名并带 `group` / `module` 展示。
+- 规则按 `scope`/`paths` 与当前工作目录过滤；未命中的 `always: false` 规则只保留索引。
 - 命令 handler 在执行前校验当前工作区计划，领域组命令不会跨项目执行。
 - 子 Agent 会话继承同一 preset，按同一份并集生成名册。
 - 模型层目录来自 `vibe-stack models catalog --json`；能力组只写层 id，DSH 设置页只编辑本机绑定。
@@ -185,7 +217,9 @@ vibe-stack plugin status dsh    # 显示清单声明的版本与入口
 - [ ] `project` 模式无 `.vibestack/stack.json` 时不加载 Core 和能力组，但仍加载默认技能。
 - [ ] `vibestack` 模式无 stack 时仍加载 Core；子 Agent 会话拿到同一份并集名册。
 - [ ] 只调用一次 `vibe-stack resolve --json`，并传入正确 project 与 mode。
-- [ ] 命令/技能按 `vibestack-<group>-<name>` 发布；领域组命令不跨项目执行。
+- [ ] 命令/技能按 `vibestack-<group>[-<alias>]-<name>` 发布；领域组命令不跨项目执行。
+- [ ] 模块内容按 `module` 字段区分命名空间；同名 Agent 不互相覆盖。
+- [ ] 规则按 `scope`/`paths` 过滤，`always: false` 只进索引。
 - [ ] 校验 `schema_version`，不兼容时只加载默认技能并告警。
 - [ ] CLI 缺失、超时、非零退出、JSON 损坏时不阻断 Agent 启动。
 - [ ] rules、skills 路径正确追加并去重。

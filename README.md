@@ -69,7 +69,11 @@ Core 使用 `core/<version>/group.json`，领域能力组使用 `domain/<group-n
 - 领域能力组位于 `capability-groups/domain/`，只在 `groups` 中列出时加载。
 - 项目独有能力组位于 `.vibestack/groups/<name>/`（无版本目录），同名时覆盖仓库组。
 - 内容目录：`rules/`、`agents/`、`commands/`、`skills/`、`references/`。
+- 可选 `modules/<path>/`：子系统内容，自带 `rules/` 等目录与可选 `module.json`；
+  不单独版本化，随组版本发布。组根是全局默认，模块是局部覆盖。
 - 能力组内不放 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
+
+模块与规则作用域见 [`docs/nested-modules.md`](docs/nested-modules.md)。
 
 能力组开发由领域组 `group-forge` 提供；在 VibeStack 仓库根目录的
 `.vibestack/stack.json` 中已激活它。详见
@@ -154,23 +158,27 @@ DSH 适配器只读写自己的运行态，不复制文件到 Agent 私有目录
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "core": { "name": "core", "version": "0.1.0" },
   "groups": [
     { "name": "data-forge", "version": "1.0.0" },
-    { "name": "blender", "version": "1.0.0" }
-  ]
+    { "name": "unity-framework", "version": "1.0.0", "modules": "*", "exclude": ["legacy"] }
+  ],
+  "agents_md": "off"
 }
 ```
 
-`agents` 字段已废弃；resolver 继续接受但忽略，下一版 stack schema 再删除。
+- `schema_version` 必须为 `2`；旧格式不兼容，直接报错。
+- `modules` 省略 = 组根 + `default_modules`；`"*"` = 全部；数组按路径前缀包含。
+- `exclude` 从激活集扣除；`disable` 按规则限定 id 或裸名禁用规则。
+- `agents_md: "nested"` 时额外吸收项目子目录的 `AGENTS.md`，默认关闭。
 
 加载顺序：
 
 1. Core 能力组
 2. `groups` 数组顺序
-3. `extends` 依赖先于依赖者
-4. 同名 Agent / 命令 / MCP 后加载者覆盖
+3. `extends` 依赖先于依赖者，组内 `depends` 拓扑 + 路径字典序
+4. 同名 Agent / 命令 / MCP 后加载者覆盖；规则按作用域与 `priority` 注入
 
 `vibe-stack resolve` 默认是 `project` 模式：项目没有 `.vibestack/stack.json` 时 Core 不加载。
 DeepSeek Harness 的 VibeStack 模式使用 `--mode vibestack`：**Core 无条件加载**，领域能力组
@@ -205,7 +213,7 @@ vibe-stack resolve --json --mode vibestack --project <project>
 | 解析计划 | DSH 机制 |
 |---|---|
 | `rules` | `agent/pre-step` 注入持久 `<system-reminder>` 消息 |
-| `skills` | `ctx.skills.registerProvider('vibestack')`，名称 `vibestack-<group>-<name>` |
+| `skills` | `ctx.skills.registerProvider('vibestack')`，名称 `vibestack-<group>[-<alias>]-<name>` |
 | `agents` | 会话投影 + 左下角 Agent 菜单；人设段落 |
 | `commands` | `ctx.commands.register()`，模板渲染后 `followup()` |
 | `mcp` | 按工具包挂载 `@deepseek-ai/dsh-mcp-client` 子插件 |

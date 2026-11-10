@@ -47,32 +47,6 @@ def test_cli_resolve_json(repo: Path, project: Path, capsysbinary) -> None:
     assert data["fingerprint"]
 
 
-def test_cli_resolve_api_version_1(repo: Path, project: Path, capsysbinary) -> None:
-    base = ["--repo", str(repo), "--project", str(project)]
-    assert main([*base, "init", "--core", "core@0.1.0"]) == 0
-    assert main([*base, "activate", "data"]) == 0
-    capsysbinary.readouterr()
-    assert (
-        main(
-            [
-                "--repo",
-                str(repo),
-                "resolve",
-                "--json",
-                "--api-version",
-                "1",
-                "--project",
-                str(project),
-            ]
-        )
-        == 0
-    )
-    data = json.loads(capsysbinary.readouterr().out.decode("utf-8"))
-    assert data["schema_version"] == 1
-    assert "mode" not in data
-    assert "model" not in data["agents"]["Helper"]
-
-
 def test_cli_resolve_without_stack(
     repo: Path, project: Path, capsysbinary
 ) -> None:
@@ -120,7 +94,7 @@ def test_cli_resolve_accepts_utf8_bom(repo: Path, project: Path, capsysbinary) -
     stack = project / ".vibestack" / "stack.json"
     stack.parent.mkdir(parents=True)
     stack.write_text(
-        "\ufeff" + json.dumps({"schema_version": 1, "groups": []}),
+        "\ufeff" + json.dumps({"schema_version": 2, "groups": []}),
         encoding="utf-8",
     )
     assert main(["--repo", str(repo), "resolve", "--json", "--project", str(project)]) == 0

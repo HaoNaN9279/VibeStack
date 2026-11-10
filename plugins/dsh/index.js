@@ -50,6 +50,22 @@ import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skill
 export const name = 'vibestack'
 
 /**
+ * Express a working directory relative to the project root the resolver reported.
+ *
+ * Rule scoping uses this value, so an unknown root degrades to the directory
+ * itself instead of guessing a parent.
+ * @param {unknown} project - absolute project root from the plan.
+ * @param {string} cwd - absolute session working directory.
+ * @returns {string} posix-style relative path, or '' when they are the same.
+ */
+function relativeTo(project, cwd) {
+  if (typeof project !== 'string' || project.length === 0) return ''
+  const relative = path.relative(project, cwd)
+  if (relative.length === 0 || relative.startsWith('..')) return ''
+  return relative.split(path.sep).join('/')
+}
+
+/**
  * Optional Config schema.
  *
  * The schema lives in `@deepseek-ai/schemastery`, a harness-provided package.
@@ -565,11 +581,12 @@ export function apply(ctx, rawConfig, deps = {}) {
    * only sees the rule text. No plugin-owned event type is ever written.
    * @param {object} agent - agent handle.
    * @param {Record<string, unknown>} plan - resolved plan.
+   * @param {string} [relative] - working directory relative to the project root.
    * @returns {Promise<Record<string, unknown> | null>} message to append, or null.
    */
-  const injectInstructions = async (agent, plan) => {
+  const injectInstructions = async (agent, plan, relative = '') => {
     if (!config.rules) return null
-    const rendered = await renderRules(plan, { maxBytes: config.maxRulesBytes })
+    const rendered = await renderRules(plan, { maxBytes: config.maxRulesBytes, cwd: relative })
     if (rendered === null) return null
     /** @type {{key: string, agents: object[], project: string, defaultSelected: string | null, version: number} | null} */
     let roster = null
@@ -676,7 +693,7 @@ export function apply(ctx, rawConfig, deps = {}) {
     }
     await applyDefaultLayer(agent)
     await applySkillLayers(agent, plan, messages)
-    return injectInstructions(agent, plan)
+    return injectInstructions(agent, plan, relativeTo(plan.project, cwd))
   }
 
   /** Sessions with a preset-binding prime already in flight. */

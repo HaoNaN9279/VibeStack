@@ -33,7 +33,7 @@ Agent 运行时配置
 
 CLI 管理命令和工具入口仍由 `vibe-stack` 提供。
 
-## 3. 能力组
+## 3. 能力组与模块
 
 ```text
 capability-groups/
@@ -44,7 +44,8 @@ capability-groups/
 │       ├── agents/
 │       ├── commands/
 │       ├── skills/
-│       └── references/
+│       ├── references/
+│       └── modules/<path>/        # 可选，见下
 └── domain/
     └── <name>/
         └── <version>/
@@ -53,8 +54,24 @@ capability-groups/
             ├── agents/
             ├── commands/
             ├── skills/
-            └── references/
+            ├── references/
+            └── modules/<path>/
 ```
+
+总共有四层作用域：
+
+```text
+Layer (core / domain / project)
+└── Group (版本与分发边界)
+    └── Module (激活、命名、规则作用域边界)
+        └── Unit (rule / agent / command / skill)
+```
+
+三条不变量：
+
+- 模块不单独版本化，随所在组版本走。
+- 模块不跨组；跨组复用走 `extends`。
+- 没有 `module.json` 的目录也是模块，目录路径就是模块 id。
 
 Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列出时加载。
 `load_group` 对 `core` 使用 `capability-groups/core/<version>/`，其余组使用
@@ -74,11 +91,58 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
   "permissions": ["fs"],
   "extends": [],
   "tools": ["tool:<guid>@v0.2.1"],
-  "tool_permissions": { "tool:<guid>@v0.2.1": ["fs", "exec"] }
+  "tool_permissions": { "tool:<guid>@v0.2.1": ["fs", "exec"] },
+  "modules_dir": "modules",
+  "default_modules": ["battle"]
 }
 ```
 
-`extends` 形成依赖图。解析时依赖先于依赖者，按组名去重。
+`extends` 形成依赖图。解析时依赖先于依赖者，按组名去重。`modules_dir` 默认
+`modules`，`default_modules` 是项目未指定模块时的默认激活集；两者都可省略。
+
+### 3.1 模块
+
+```text
+<group>/modules/battle/
+├── module.json          # 可选
+├── rules/
+├── agents/
+├── commands/
+├── skills/
+└── references/
+```
+
+`module.json`（全部可选，除 `name` 外无必填）：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `name` | string | 若写，必须等于目录末段 |
+| `title` | string | 展示名 |
+| `description` | string | 一句话说明 |
+| `alias` | string | 宿主命名段，默认目录各段用 `-` 连接 |
+| `paths` | string[] | 模块默认规则作用域，如 `["Assets/Battle/**"]` |
+| `default` | bool | 未配置默认集时是否默认激活 |
+| `depends` | string[] | 同组模块路径，解析时自动补全并拓扑排序 |
+| `tools` | string[] | 模块级工具引用，合并进组工具集 |
+
+模块路径必须匹配 `^[a-z0-9]+(-[a-z0-9]+)*(/...)*$`，深度不超过 3。同一组内 `alias`
+必须唯一；`depends` 必须指向同组存在的模块且无环。
+
+组根内容与模块内容语义不同：**组根是全局默认，模块是局部覆盖**。组根适合全框架通用的
+约定，模块适合某个子系统（战斗、UI、资源管线）自己的规则、Agent、命令和技能。
+
+限定 id：
+
+```text
+组根  <group>/<name>
+模块  <group>/<alias>/<name>
+```
+
+DSH 宿主名（命令、技能）：`vibestack-<group>-<alias>-<name>`；组根内容保持
+`vibestack-<group>-<name>`。限定 id 与宿主名都由 resolver 计算，插件不自行拼接。
+
+详细规范见 [`nested-modules.md`](nested-modules.md)。
+
 
 ## 4. 项目配置
 
@@ -90,6 +154,28 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 ```
 
 `stack.json` 是唯一激活来源。`lock.json` 是 `sync` 生成的解析快照，供诊断和复现。
+
+```json
+{
+  "schema_version": 2,
+  "core": { "name": "core", "version": "0.1.0" },
+  "agents": [],
+  "groups": [
+    { "name": "unity-framework", "version": "1.0.0", "modules": "*" },
+    { "name": "hnflow-forge", "version": "0.1.0", "exclude": ["legacy"], "disable": ["unity-framework/legacy/old-rule"] }
+  ],
+  "agents_md": "off"
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `modules` | 省略 = 组根 + `default_modules`；`"*"` = 全部；数组按路径前缀包含（选 `battle` 含 `battle/ai`） |
+| `exclude` | 同上语义，从激活集扣除 |
+| `disable` | 规则限定 id 或裸规则名的列表，命中即不注入 |
+| `agents_md` | `off`（默认）或 `nested`；`nested` 时吸收项目子目录的 `AGENTS.md` |
+
+`schema_version` 必须为 `2`，旧值直接报错，不做兼容。
 
 无 `stack.json` 时按 resolve 模式区分：
 
@@ -104,33 +190,49 @@ Core 常驻；领域能力组只在 `.vibestack/stack.json` 的 `groups` 中列�
 
 ```text
 1. 读全局配置 ~/.config/vibestack/config.json 定位仓库
-2. 读 .vibestack/stack.json
+2. 读 .vibestack/stack.json（schema 2）
 3. 加载 Core
 4. 按 groups 顺序加载领域能力组
 5. 每个组先递归加载 extends
 6. 按组名去重
-7. 校验规则、Agent、命令、技能和 MCP
-8. 生成与目标 Agent 无关的注入计划
-9. 插件把注入计划映射到目标 Agent 配置
+7. 每组发现模块树，按 modules/exclude/default_modules 计算激活集
+8. 按 depends 拓扑 + 路径字典序排列模块
+9. 收集组根与模块的规则、Agent、命令、技能、MCP，并解析规则作用域
+10. 计算限定 id 与宿主名，检测碰撞
+11. 生成与目标 Agent 无关的注入计划
+12. 插件把注入计划映射到目标 Agent 配置
 ```
 
 `resolve` 严格只读，不写 `.vibestack/lock.json`。`project` 模式无 stack 时返回
 `active=false`，不加载 Core；`vibestack` 模式无 stack 时返回 `active=true`，只含 Core。
-缺失能力组或坏文件在 `resolve` 中产生告警并跳过；`sync` 保持严格校验，缺失组直接报错。
+缺失能力组或坏文件在 `resolve` 中产生告警并跳过；`sync` 保持严格校验，缺失组、缺失模块、
+限定 id 重复、宿主名碰撞都直接报错。`validate` 等价于严格解析但不写 lock。
 
-DSH 适配器把能力组命令/技能映射为 `vibestack-<group>-<name>`，会话的 Agent / 命令 /
-技能列表始终是 Core + 当前工作区并集；子 Agent 会话沿用同一份计划。详见
+规则按作用域注入：
+
+| 作用域 | 何时注入 |
+|---|---|
+| `global` | 总是 |
+| `module` | 当前工作目录在模块目录内（或落在模块 `paths`） |
+| `paths` | 当前工作目录匹配 `paths` 中任一 glob |
+| `always: false` | 不注入正文，只进紧凑索引 |
+
+DSH 适配器把能力组命令/技能映射为 `vibestack-<group>[-<alias>]-<name>`，会话的 Agent /
+命令 / 技能列表始终是 Core + 当前工作区并集；子 Agent 会话沿用同一份计划。详见
 [`dsh-plugin-plan.md`](dsh-plugin-plan.md) 的 R7–R10。
 
 合并规则：
 
 | 类型 | 规则 |
 |---|---|
-| rules | 追加 |
-| skills | 追加路径 |
-| agents | 同名覆盖；插件按层 id 应用模型，保留宿主侧其它配置 |
-| commands | 同名覆盖 |
-| mcp | 同名覆盖 |
+| rules | 追加；`priority` 越大越靠后注入；`overrides` 压掉同名早期规则 |
+| skills | 追加路径；宿主名重复保留后加载者并告警，`sync` 报错 |
+| agents | 同名覆盖；模块内容以 `<alias>/<Name>` 为键，天然不冲突 |
+| commands | 同名覆盖；同上 |
+| mcp | 同名覆盖；模块服务器名含 alias |
+
+限定 id 完全相同才视为重复：`resolve` 告警并保留后加载者，`sync` / `validate` 报错。
+跨组同名仍按「后加载覆盖」处理。
 
 ## 6. 工具包
 
@@ -294,14 +396,17 @@ provider / model / reasoningEffort 与凭据留在项目模型文件或本机。
 
 | 命令 | 作用 |
 |---|---|
-| `list` | 列出能力组和工具 |
-| `status` | 显示项目激活项 |
-| `info` | 组详情 |
+| `list [--tree]` | 列出能力组和工具；`--tree` 带模块树 |
+| `status` | 显示项目激活项、stack schema、模块选择 |
+| `info <group> [--modules]` | 组详情，含模块与计数 |
 | `init` | 创建 `stack.json` |
 | `activate` | 追加组 |
 | `deactivate` | 移除组 |
 | `sync` | 严格解析并写 `lock.json` |
+| `validate [--json]` | 严格解析，不写文件，失败退出码 1 |
 | `resolve --json` | 生成只读注入计划，供插件消费 |
+| `rules list/show` | 列出规则；`show --for <path>` 看某路径生效的规则 |
+| `module list/enable/disable` | 查看、启用、停用模块（写回 stack.json） |
 | `models catalog/show/bind/unbind/default/migrate` | 模型层目录、项目默认与本机覆盖管理 |
 | `tool list/run/serve/exec` | 工具入口 |
 | `plugin status/list` | 适配器自省（安装由 `dsh plugin add` 负责） |

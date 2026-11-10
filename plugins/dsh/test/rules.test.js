@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { digestOf, escapeReminder, renderRules, stripFrontmatter } from '../lib/rules.js'
+import { digestOf, escapeReminder, matchPath, renderRules, ruleApplies, stripFrontmatter } from '../lib/rules.js'
 
 test('stripFrontmatter removes a YAML block', () => {
   assert.equal(stripFrontmatter('---\nname: global\n---\n\n# Global\n'), '# Global')
@@ -84,6 +84,47 @@ test('renderRules skips unreadable files', async () => {
   )
   assert.ok(rendered)
   assert.deepEqual(rendered.paths, ['/a/ok.md'])
+})
+
+test('matchPath treats a trailing /** as the subtree', () => {
+  assert.equal(matchPath('battle/ai/state.cs', 'battle/**'), true)
+  assert.equal(matchPath('battle', 'battle/**'), true)
+  assert.equal(matchPath('battlefield/x.cs', 'battle/**'), false)
+  assert.equal(matchPath('Assets/Game/Battle/x.cs', 'Assets/Game/**'), true)
+  assert.equal(matchPath('ui/x.cs', 'battle/**'), false)
+})
+
+test('ruleApplies scopes global, module, and paths rules', () => {
+  assert.equal(ruleApplies({ scope: 'global' }, ''), true)
+  assert.equal(ruleApplies({ scope: 'module', module: 'battle' }, 'battle/ai'), true)
+  assert.equal(ruleApplies({ scope: 'module', module: 'battle' }, 'ui'), false)
+  assert.equal(ruleApplies({ scope: 'paths', paths: ['Assets/Scripts/**'] }, 'Assets/Scripts/Ui'), true)
+  assert.equal(ruleApplies({ scope: 'paths', paths: ['Assets/Scripts/**'] }, 'Assets/Textures'), false)
+  assert.equal(ruleApplies({}, 'battle'), true)
+})
+
+test('renderRules keeps out-of-scope rules and lists always:false rules by title', async () => {
+  const files = {
+    '/g/global.md': '# Global',
+    '/g/battle.md': '# Battle only',
+    '/g/lazy.md': '# Big manual',
+  }
+  const rendered = await renderRules(
+    {
+      rules: [
+        { name: 'global', id: 'unity/global', path: '/g/global.md', group: 'unity', scope: 'global' },
+        { name: 'battle', id: 'unity/battle/physics', path: '/g/battle.md', group: 'unity', module: 'battle', scope: 'paths', paths: ['battle/**'] },
+        { name: 'lazy', id: 'unity/manual', path: '/g/lazy.md', group: 'unity', scope: 'global', always: false, description: 'Full API manual' },
+      ],
+    },
+    { read: async (file) => files[file], cwd: 'ui' },
+  )
+  assert.ok(rendered)
+  assert.match(rendered.text, /# Global/)
+  assert.ok(!rendered.text.includes('# Battle only'))
+  assert.ok(!rendered.text.includes('# Big manual'))
+  assert.match(rendered.text, /- unity\/manual: Full API manual/)
+  assert.deepEqual(rendered.paths, ['/g/global.md'])
 })
 
 test('digestOf is stable and content-sensitive', () => {

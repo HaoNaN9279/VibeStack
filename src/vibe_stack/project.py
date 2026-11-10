@@ -138,6 +138,13 @@ def resolve_order(
         for dependency in group.extends:
             ref = refs.get(dependency)
             add(dependency, ref.version if ref else None)
+        ref = refs.get(name)
+        if ref is not None:
+            group.selected_modules = (
+                list(ref.modules) if ref.modules is not None else None
+            )
+            group.excluded_modules = list(ref.exclude)
+            group.disabled_rules = list(ref.disable)
         ordered.append(group)
 
     if stack.core is not None:
@@ -154,7 +161,7 @@ def missing_tools(repo: Path, groups: list[GroupMeta]) -> list[str]:
     available = {tool.id for tool in discover_tools(repo)}
     missing: list[str] = []
     for group in groups:
-        for tool_id in group.tools:
+        for tool_id in group.all_tools:
             if tool_id not in available:
                 missing.append(f"{group.name}: {tool_id}")
     return missing
@@ -176,7 +183,7 @@ def write_lock(
         else resolve_order(repo, stack, project=project_root)
     )
     data = {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": str(repo.resolve()),
         "resolved_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "core": None,
@@ -202,17 +209,26 @@ def write_lock(
 
 
 def _group_lock(group: GroupMeta) -> dict[str, object]:
-    return {
+    data: dict[str, object] = {
         "name": group.name,
         "version": group.version,
         "path": group.root.as_posix(),
         "extends": list(group.extends),
-        "tools": list(group.tools),
+        "tools": list(group.all_tools),
         "rules": [path.relative_to(group.root).as_posix() for path in group.rules],
-        "agents": [path.name for path in group.agents],
-        "commands": [path.name for path in group.commands],
-        "skills": sorted(path.name for path in group.root.glob("skills/*")) if group.root.joinpath("skills").is_dir() else [],
+        "agents": [path.relative_to(group.root).as_posix() for path in group.agents],
+        "commands": [path.relative_to(group.root).as_posix() for path in group.commands],
+        "skills": [
+            path.relative_to(group.root).as_posix()
+            for path in sorted(group.root.glob("skills/*"))
+        ]
+        if group.root.joinpath("skills").is_dir()
+        else [],
     }
+    if group.active_modules:
+        data["modules"] = [module.path for module in group.active_modules]
+    return data
+
 
 
 def tools_for_groups(repo: Path, groups: list[GroupMeta]) -> list[ToolMeta]:
@@ -221,7 +237,7 @@ def tools_for_groups(repo: Path, groups: list[GroupMeta]) -> list[ToolMeta]:
     result: list[ToolMeta] = []
     seen: set[str] = set()
     for group in groups:
-        for tool_id in group.tools:
+        for tool_id in group.all_tools:
             tool = by_id.get(tool_id)
             if tool is not None and tool.id not in seen:
                 seen.add(tool.id)

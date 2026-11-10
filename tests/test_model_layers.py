@@ -69,9 +69,6 @@ def test_resolve_emits_catalog_and_validates_model_layers(
     assert any("unknown-model.md" in warning and "invalid model layer" in warning for warning in plan.warnings)
     assert any("host-fields.md" in warning and "temperature" in warning for warning in plan.warnings)
     assert any("host-fields.md" in warning and "provider" in warning for warning in plan.warnings)
-    old = plan.to_dict(1)
-    assert "model_layers" not in old
-    assert "model_default" not in old
 
 
 def test_inactive_plan_still_carries_the_catalog(repo: Path, project: Path) -> None:

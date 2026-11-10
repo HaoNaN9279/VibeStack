@@ -535,9 +535,9 @@ plugins/dsh/
 
 ### 10.2 兼容
 
-- 插件接受 `schema_version` ∈ {1, 2}：v1 视为 `mode=project` 且"所有条目无层"，命令/技能照常工作（这是老用户升级 DSH 插件、未升级 CLI 的过渡态）。
-- CLI `resolve` 默认输出 v2；`--api-version 1` 输出无 `mode`/`model` 的旧形状（已实现）。
-- `docs/resolve-api.md` 与 `plugins/README.md` 的注入计划示例同步更新（已完成）。
+- 只有一种形状：`schema_version` 恒为 `2`，插件校验 `== 2`，不兼容时只加载默认技能。
+- 没有版本协商参数；旧 `--api-version` 与 v1 形状已删除，旧内容通过改写迁移。
+- `docs/resolve-api.md` 与 `plugins/README.md` 的注入计划示例保持同步，含模块字段与 `names` 映射。
 
 ### 10.3 能力组侧规则
 
@@ -583,7 +583,7 @@ plugins/dsh/            # 本插件（不变 + 新增文件）
 | 里程碑 | 范围 | 验收 |
 | --- | --- | --- |
 | **M0** 事实探针（0.5–1 天） | ① `conversation.input.model` 能否被第三方单例注册覆盖/共存；② `sessionController.selectModel` 在命令 handler 中对"随后 `followup` 的回合"是否生效；③ 用户 `/skill` 触发的 pre-step 中 `selectModel` 是否影响同回合；④ 设置页 Fetch 路由读写 | 四项有结论；③ 若只能下次回合生效，文档与实现按"次回合"写死 |
-| **M1** resolve v2 剩余字段 | 已在 M11 完成（`model` 字段与 `--api-version 1`） | `resolve --json` 输出 v2 且有 `model`；`--api-version 1` 输出旧形状 |
+| **M1** resolve v2 剩余字段 | 已在 M11 完成（`model` 字段）；v1 形状与 `--api-version` 已删除 | `resolve --json` 输出唯一 v2 形状且有 `model` |
 | **M2** 命名空间 + 命令语义 | `lib/names.js`、命令注册、skill 改名、`followup`、跨项目校验、失败码（已在 M7 完成） | 旧短名不再注册；两个能力组的同名命令不冲突；命令在正确项目才执行 |
 | **M3** 模型层核心 | 已在 M11 实现（schemastery `Config` 仍待） | `ctx.get('vibestack').resolveLayer('strong')` 可读；坏配置不拖垮会话 |
 | **M4** 会话选择器 | `additive` 默认；`replace` 可选遮蔽（priority -1，非 VibeStack 回退原生目录） | VibeStack 会话显示层名；切换后实际请求路由改变；切到其他模式仍有原生模型选择 |

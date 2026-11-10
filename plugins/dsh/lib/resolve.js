@@ -9,7 +9,7 @@
 import { execFile } from 'node:child_process'
 
 /** Resolve API versions this adapter understands. */
-export const RESOLVE_SCHEMA_VERSIONS = Object.freeze([1, 2])
+export const RESOLVE_SCHEMA_VERSIONS = Object.freeze([2])
 /** Version emitted by the resolver this adapter ships with. */
 export const RESOLVE_SCHEMA_VERSION = 2
 
@@ -80,6 +80,7 @@ export function normalizePlan(plan) {
     agents: record(plan.agents),
     commands: record(plan.commands),
     mcp: record(plan.mcp),
+    names: record(plan.names),
     warnings: list(plan.warnings).filter((item) => typeof item === 'string'),
   }
 }

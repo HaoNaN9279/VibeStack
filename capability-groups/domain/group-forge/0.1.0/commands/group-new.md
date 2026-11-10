@@ -19,9 +19,9 @@ model: standard
    - `name`、`version` 与目录一致；
    - `permissions` 按内容需要填写（`fs` / `net` / `exec` / `secrets`）；
    - `extends` 与 `tools` 默认空数组。
-4. 按需创建 `rules/`、`agents/`、`commands/`、`skills/`；不要创建 `tools/` 或 `mcp/`。
-5. 运行 `vibe-stack resolve --json --project <project>` 验证新组可被加载（可在临时测试项目中激活）。
-6. 报告创建的路径、解析结果，以及项目激活命令：
+4. 按需创建 `rules/`、`agents/`、`commands/`、`skills/`；需要分子系统时建 `modules/<path>/`（见 `custom-module`）。不要创建 `tools/` 或 `mcp/`。
+5. 运行 `vibe-stack validate` 与 `vibe-stack resolve --json --project <project>` 验证新组可被加载（可在临时测试项目中激活）。
+6. 报告创建的路径、模块树（`vibe-stack list --tree`）、解析结果，以及项目激活命令：
 
 ```bash
 vibe-stack activate <name>@<version>

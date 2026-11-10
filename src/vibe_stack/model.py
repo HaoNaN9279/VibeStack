@@ -1,4 +1,4 @@
-"""Data models for groups, tools, and project stacks."""
+"""Data models for groups, modules, tools, and project stacks."""
 
 from __future__ import annotations
 
@@ -9,13 +9,81 @@ from pathlib import Path
 from vibe_stack.errors import VibeStackError
 from vibe_stack.model_layers import DEFAULT_MODEL_LAYER
 
+STACK_SCHEMA_VERSION = 2
+DEFAULT_MODULES_DIR = "modules"
+
 
 @dataclass
 class GroupRef:
-    """Reference to one capability group version."""
+    """Reference to one capability group version plus its module selection.
+
+    ``modules`` is ``None`` when the stack does not choose modules (the group's
+    own ``default_modules`` apply) and a list of module paths otherwise.
+    """
 
     name: str
-    version: str
+    version: str = ""
+    modules: list[str] | None = None
+    exclude: list[str] = field(default_factory=list)
+    disable: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ModuleMeta:
+    """One nested module inside a capability group.
+
+    A module is a directory path such as ``battle/ai``. It is not versioned: it
+    inherits its group's version directory, and it never spans groups.
+    """
+
+    path: str
+    root: Path
+    alias: str
+    title: str = ""
+    description: str = ""
+    paths: list[str] = field(default_factory=list)
+    default: bool = False
+    depends: list[str] = field(default_factory=list)
+    tools: list[str] = field(default_factory=list)
+
+    @property
+    def depth(self) -> int:
+        return self.path.count("/")
+
+    @property
+    def rules(self) -> list[Path]:
+        return _md_rglob(self.root / "rules")
+
+    @property
+    def agents(self) -> list[Path]:
+        return _md_rglob(self.root / "agents")
+
+    @property
+    def commands(self) -> list[Path]:
+        return _md_rglob(self.root / "commands")
+
+    @property
+    def skills_dir(self) -> Path | None:
+        path = self.root / "skills"
+        return path if path.is_dir() else None
+
+    @property
+    def agents_md(self) -> Path | None:
+        path = self.root / "AGENTS.md"
+        return path if path.is_file() else None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "alias": self.alias,
+            "title": self.title,
+            "description": self.description,
+            "root": self.root.as_posix(),
+            "paths": list(self.paths),
+            "default": self.default,
+            "depends": list(self.depends),
+            "tools": list(self.tools),
+        }
 
 
 @dataclass
@@ -31,20 +99,39 @@ class GroupMeta:
     tools: list[str] = field(default_factory=list)
     tool_permissions: dict[str, list[str]] = field(default_factory=dict)
     root: Path = field(default_factory=Path)
+    modules_dir: str = DEFAULT_MODULES_DIR
+    default_modules: list[str] = field(default_factory=list)
+    # Selection made by the project stack; ``None`` means "the group default".
+    selected_modules: list[str] | None = None
+    excluded_modules: list[str] = field(default_factory=list)
+    disabled_rules: list[str] = field(default_factory=list)
+    # Filled by the resolver once module discovery and activation ran.
+    active_modules: list[ModuleMeta] = field(default_factory=list)
+
+    @property
+    def all_tools(self) -> list[str]:
+        """Group tools plus the tools contributed by active modules."""
+        seen: list[str] = []
+        for tool_id in [*self.tools, *(tool for m in self.active_modules for tool in m.tools)]:
+            if tool_id not in seen:
+                seen.append(tool_id)
+        return seen
+
+    @property
+    def rules_root(self) -> Path:
+        return self.root / "rules"
 
     @property
     def rules(self) -> list[Path]:
-        if not (self.root / "rules").is_dir():
-            return []
-        return sorted((self.root / "rules").rglob("*.md"))
+        return _md_rglob(self.rules_root)
 
     @property
     def agents(self) -> list[Path]:
-        return _md_files(self.root / "agents")
+        return _md_rglob(self.root / "agents")
 
     @property
     def commands(self) -> list[Path]:
-        return _md_files(self.root / "commands")
+        return _md_rglob(self.root / "commands")
 
     @property
     def skills_dir(self) -> Path | None:
@@ -53,7 +140,16 @@ class GroupMeta:
 
     @property
     def references(self) -> list[Path]:
-        return _md_files(self.root / "references")
+        return _md_rglob(self.root / "references")
+
+    @property
+    def agents_md(self) -> Path | None:
+        path = self.root / "AGENTS.md"
+        return path if path.is_file() else None
+
+    @property
+    def modules_root(self) -> Path:
+        return self.root / self.modules_dir
 
 
 @dataclass
@@ -95,6 +191,7 @@ class ResolvedGroup:
     permissions: list[str] = field(default_factory=list)
     extends: list[str] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
+    modules: list[dict[str, object]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -106,19 +203,40 @@ class ResolvedGroup:
             "permissions": list(self.permissions),
             "extends": list(self.extends),
             "tools": list(self.tools),
+            "modules": [dict(module) for module in self.modules],
         }
 
 
 @dataclass
 class ResolvedRule:
-    """One validated rule file."""
+    """One validated rule file, scoped to a group root or a module."""
 
     name: str
     path: str
     group: str
+    id: str = ""
+    module: str = ""
+    kind: str = "rule"
+    scope: str = "global"
+    paths: list[str] = field(default_factory=list)
+    always: bool = True
+    priority: int = 0
+    description: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return {"name": self.name, "path": self.path, "group": self.group}
+        return {
+            "name": self.name,
+            "id": self.id,
+            "path": self.path,
+            "group": self.group,
+            "module": self.module,
+            "kind": self.kind,
+            "scope": self.scope,
+            "paths": list(self.paths),
+            "always": self.always,
+            "priority": self.priority,
+            "description": self.description,
+        }
 
 
 @dataclass
@@ -130,15 +248,20 @@ class ResolvedSkill:
     group: str
     description: str = ""
     model: str | None = None
+    id: str = ""
+    module: str = ""
+    host: str = ""
 
-    def to_dict(self, include_model: bool = True) -> dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
             "name": self.name,
+            "id": self.id,
             "path": self.path,
             "group": self.group,
+            "module": self.module,
             "description": self.description,
         }
-        if include_model and self.model:
+        if self.model:
             data["model"] = self.model
         return data
 
@@ -154,16 +277,25 @@ class ResolvedAgent:
     source: str
     group: str
     model: str | None = None
+    id: str = ""
+    module: str = ""
+    system_path: str = ""
+    label: str = ""
 
-    def to_dict(self, include_model: bool = True) -> dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
+            "name": self.name,
+            "id": self.id,
             "description": self.description,
             "mode": self.mode,
             "system": self.system,
+            "system_path": self.system_path,
             "source": self.source,
             "group": self.group,
+            "module": self.module,
+            "label": self.label,
         }
-        if include_model and self.model:
+        if self.model:
             data["model"] = self.model
         return data
 
@@ -179,17 +311,24 @@ class ResolvedCommand:
     group: str
     agent: str | None = None
     model: str | None = None
+    id: str = ""
+    module: str = ""
+    template_path: str = ""
 
-    def to_dict(self, include_model: bool = True) -> dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
+            "name": self.name,
+            "id": self.id,
             "description": self.description,
             "template": self.template,
+            "template_path": self.template_path,
             "source": self.source,
             "group": self.group,
+            "module": self.module,
         }
         if self.agent:
             data["agent"] = self.agent
-        if include_model and self.model:
+        if self.model:
             data["model"] = self.model
         return data
 
@@ -214,72 +353,71 @@ class ResolvedPlan:
     fingerprint: str
     model_layers: list[dict[str, object]] = field(default_factory=list)
     model_default: str = DEFAULT_MODEL_LAYER
+    names: dict[str, dict[str, str]] = field(default_factory=dict)
     group_metas: list[GroupMeta] = field(default_factory=list, repr=False)
+    module_metas: dict[str, list[ModuleMeta]] = field(default_factory=dict, repr=False)
 
-    def to_dict(self, api_version: int = 2) -> dict[str, object]:
-        """Serialize the plan for one resolve API version.
-
-        v1 is the pre-mode/pre-model shape; v2 adds ``mode``, the optional
-        ``model`` field on agents, commands, and skills, and the platform model
-        layer catalog.
-        """
-        include_model = api_version >= 2
-        data: dict[str, object] = {
-            "schema_version": api_version,
+    def to_dict(self) -> dict[str, object]:
+        """Serialize the plan into the single resolve API shape."""
+        return {
+            "schema_version": self.schema_version,
             "active": self.active,
+            "mode": self.mode,
             "repository": self.repository,
             "project": self.project,
             "core": self.core.to_dict() if self.core is not None else None,
             "groups": [group.to_dict() for group in self.groups],
             "rules": [rule.to_dict() for rule in self.rules],
-            "skills": [skill.to_dict(include_model) for skill in self.skills],
+            "skills": [skill.to_dict() for skill in self.skills],
             "agents": {
-                name: agent.to_dict(include_model)
-                for name, agent in self.agents.items()
+                name: agent.to_dict() for name, agent in self.agents.items()
             },
             "commands": {
-                name: command.to_dict(include_model)
-                for name, command in self.commands.items()
+                name: command.to_dict() for name, command in self.commands.items()
             },
             "mcp": dict(self.mcp),
             "warnings": list(self.warnings),
             "fingerprint": self.fingerprint,
+            "model_layers": [dict(layer) for layer in self.model_layers],
+            "model_default": self.model_default,
+            "names": {
+                kind: dict(entries) for kind, entries in self.names.items()
+            },
         }
-        if api_version >= 2:
-            data["mode"] = self.mode
-            data["model_layers"] = [dict(layer) for layer in self.model_layers]
-            data["model_default"] = self.model_default
-        return data
 
 
 @dataclass
 class ProjectStack:
     """Contents of ``.vibestack/stack.json``."""
 
-    schema_version: int = 1
+    schema_version: int = STACK_SCHEMA_VERSION
     core: GroupRef | None = None
     agents: list[str] = field(default_factory=list)
     groups: list[GroupRef] = field(default_factory=list)
+    agents_md: str = "off"
 
     def to_dict(self) -> dict[str, object]:
         data: dict[str, object] = {
-            "schema_version": self.schema_version,
+            "schema_version": STACK_SCHEMA_VERSION,
             "agents": list(self.agents),
-            "groups": [
-                _group_ref_dict(ref) for ref in self.groups
-            ],
+            "groups": [_group_ref_dict(ref) for ref in self.groups],
         }
         if self.core is not None:
             data["core"] = {"name": self.core.name, "version": self.core.version}
+        if self.agents_md and self.agents_md != "off":
+            data["agents_md"] = self.agents_md
         return data
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> ProjectStack:
         if not isinstance(data, dict):
             raise VibeStackError("stack.json must be a JSON object")
-        schema = data.get("schema_version", 1)
-        if schema != 1:
-            raise VibeStackError(f"unsupported stack schema_version: {schema}")
+        schema = data.get("schema_version", STACK_SCHEMA_VERSION)
+        if schema != STACK_SCHEMA_VERSION:
+            raise VibeStackError(
+                f"unsupported stack schema_version: {schema} "
+                f"(expected {STACK_SCHEMA_VERSION})"
+            )
         core_data = data.get("core")
         core = None
         if isinstance(core_data, dict):
@@ -294,33 +432,75 @@ class ProjectStack:
         for item in raw_groups:
             if not isinstance(item, dict) or not item.get("name"):
                 raise VibeStackError("stack.json group entries need a name")
+            modules_value = item.get("modules")
+            modules: list[str] | None
+            if isinstance(modules_value, list):
+                modules = [str(entry) for entry in modules_value]
+            elif isinstance(modules_value, str) and modules_value.strip():
+                modules = [modules_value.strip()]
+            elif modules_value is None:
+                modules = None
+            else:
+                raise VibeStackError(
+                    f"stack.json group '{item['name']}' modules must be "
+                    f"\"*\" or an array of module paths"
+                )
             groups.append(
                 GroupRef(
                     name=str(item["name"]),
                     version=str(item.get("version", "")),
+                    modules=modules,
+                    exclude=_str_list(item.get("exclude")),
+                    disable=_str_list(item.get("disable")),
                 )
             )
         agents = data.get("agents", [])
+        agents_md = str(data.get("agents_md", "off") or "off")
+        if agents_md not in {"off", "nested"}:
+            raise VibeStackError(
+                f"stack.json agents_md must be 'off' or 'nested', not '{agents_md}'"
+            )
         return cls(
-            schema_version=1,
+            schema_version=STACK_SCHEMA_VERSION,
             core=core,
             agents=[str(item) for item in agents] if isinstance(agents, list) else [],
             groups=groups,
+            agents_md=agents_md,
         )
 
 
 def _group_ref_dict(ref: GroupRef) -> dict[str, object]:
-    """Serialize a group reference, omitting an empty version."""
+    """Serialize a group reference, omitting empty optional fields."""
     data: dict[str, object] = {"name": ref.name}
     if ref.version:
         data["version"] = ref.version
+    if ref.modules is not None:
+        data["modules"] = list(ref.modules)
+    if ref.exclude:
+        data["exclude"] = list(ref.exclude)
+    if ref.disable:
+        data["disable"] = list(ref.disable)
     return data
 
 
-def _md_files(directory: Path) -> list[Path]:
+def _md_rglob(directory: Path) -> list[Path]:
     if not directory.is_dir():
         return []
-    return sorted(directory.glob("*.md"))
+    found: list[Path] = []
+    for path in directory.rglob("*.md"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(directory)
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        found.append(path)
+    return sorted(found)
+
+
+def _str_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
 
 
 def read_json(path: Path) -> dict[str, object]:

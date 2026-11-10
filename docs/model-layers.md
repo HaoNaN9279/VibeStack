@@ -58,7 +58,7 @@ model: fast
 }
 ```
 
-`--api-version 1` 不输出这两个字段。未知层写入 `warnings` 并省略该条目的 `model`。
+未知层写入 `warnings` 并省略该条目的 `model`。这两个字段始终存在，没有版本开关。
 
 ## 5. 项目默认绑定
 

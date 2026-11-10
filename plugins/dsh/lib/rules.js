@@ -5,12 +5,18 @@
  * `dsh-agent-instructions` delivers AGENTS.md: one persistent user-role
  * `<system-reminder>` message. Only the rule body is used; the resolver already
  * validated the frontmatter.
+ *
+ * Only the session working directory is known when a step starts, so scoping is
+ * decided per directory subtree: `global` rules always apply, `module`/`paths`
+ * rules apply when the working directory matches. Rules pinned with
+ * `always: false` are listed by title only; the model can read them on demand.
  */
 
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 
 const CLOSING = '</system-reminder>'
+const INDEX_LINE_MAX = 120
 
 /**
  * Remove a leading YAML frontmatter block.
@@ -45,15 +51,89 @@ export function digestOf(text) {
 }
 
 /**
- * Render the rules message for one plan.
+ * Normalise a project-relative path for glob comparison.
+ * @param {unknown} value - path from the plan or the host.
+ * @returns {string} posix-style relative path without leading or trailing slashes.
+ */
+export function normalizePath(value) {
+  return String(value ?? '')
+    .replace(/\\/gu, '/')
+    .replace(/^\/+/u, '')
+    .replace(/\/+$/u, '')
+}
+
+/**
+ * Match one project-relative path against one rule glob.
+ * A trailing `/**` selects the directory itself and its whole subtree.
+ * @param {string} relative - normalised project-relative path.
+ * @param {string} pattern - rule glob.
+ * @returns {boolean} true when the path is inside the pattern.
+ */
+export function matchPath(relative, pattern) {
+  const glob = normalizePath(pattern)
+  if (glob.length === 0) return true
+  if (glob.endsWith('/**')) {
+    const prefix = glob.slice(0, -3)
+    return relative === prefix || relative.startsWith(`${prefix}/`)
+  }
+  if (glob.endsWith('/*')) {
+    const prefix = glob.slice(0, -2)
+    return relative.startsWith(`${prefix}/`) && !relative.slice(prefix.length + 1).includes('/')
+  }
+  let index = 0
+  for (const segment of glob.split('/')) {
+    const next = relative.indexOf(segment, index)
+    if (next === -1) return false
+    index = next + segment.length
+  }
+  return true
+}
+
+/**
+ * Whether one rule is injected for a working directory.
+ * @param {Record<string, unknown>} rule - plan rule entry.
+ * @param {string} relative - normalised project-relative working directory.
+ * @returns {boolean} true when the rule applies.
+ */
+export function ruleApplies(rule, relative) {
+  const scope = typeof rule.scope === 'string' ? rule.scope : 'global'
+  if (scope === 'global') return true
+  const declared = Array.isArray(rule.paths)
+    ? rule.paths.filter((item) => typeof item === 'string' && item.length > 0)
+    : []
+  const module = normalizePath(rule.module)
+  const patterns = declared.length > 0
+    ? declared
+    : (scope === 'module' && module.length > 0 ? [`${module}/**`] : [])
+  if (patterns.length === 0) return true
+  if (relative.length === 0) return false
+  return patterns.some((pattern) => matchPath(relative, pattern))
+}
+
+/**
+ * One-line description for a rule that stays out of the injected text.
+ * @param {Record<string, unknown>} rule - plan rule entry.
+ * @returns {string} at most INDEX_LINE_MAX characters.
+ */
+function indexSummary(rule) {
+  const described = typeof rule.description === 'string' ? rule.description.trim() : ''
+  const text = described.length > 0 ? described : String(rule.name ?? rule.id ?? 'rule')
+  return text.length <= INDEX_LINE_MAX ? text : `${text.slice(0, INDEX_LINE_MAX - 1)}…`
+}
+
+/**
+ * Render the rules message for one plan at one working directory.
  * @param {Record<string, unknown>} plan - normalized resolve plan.
- * @param {{read?: (file: string) => Promise<string>, maxBytes?: number}} [options] - injectable reader and budget.
+ * @param {{read?: (file: string) => Promise<string>, maxBytes?: number, cwd?: string}} [options] - injectable reader, budget and working directory.
  * @returns {Promise<{text: string, digest: string, paths: string[]} | null>} rendered rules, or null when empty.
  */
 export async function renderRules(plan, options = {}) {
   const read = options.read ?? ((file) => readFile(file, 'utf8'))
   const maxBytes = Number.isFinite(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 65536
-  const rules = Array.isArray(plan?.rules) ? plan.rules : []
+  const relative = normalizePath(options.cwd)
+  const rules = (Array.isArray(plan?.rules) ? plan.rules : [])
+    .filter((rule) => rule && typeof rule.path === 'string' && rule.path.length > 0)
+    .filter((rule) => ruleApplies(rule, relative))
   if (rules.length === 0) return null
 
   const header = [
@@ -62,11 +142,15 @@ export async function renderRules(plan, options = {}) {
   ]
   const footer = ['</system-reminder>']
   const parts = []
-  let bytes = Buffer.byteLength(header.join('\n\n'), 'utf8') + Buffer.byteLength(footer[0], 'utf8')
   const paths = []
+  const indexed = []
+  let bytes = Buffer.byteLength(header.join('\n\n'), 'utf8') + Buffer.byteLength(footer[0], 'utf8')
 
   for (const rule of rules) {
-    if (!rule || typeof rule.path !== 'string' || rule.path.length === 0) continue
+    if (rule.always === false) {
+      indexed.push(`- ${String(rule.id ?? rule.name ?? rule.path)}: ${indexSummary(rule)}`)
+      continue
+    }
     let body
     try {
       body = stripFrontmatter(await read(rule.path))
@@ -74,8 +158,8 @@ export async function renderRules(plan, options = {}) {
       continue
     }
     if (body.length === 0) continue
-    const label = rule.group ? `Instructions from: ${rule.path} (group: ${String(rule.group)})` : `Instructions from: ${rule.path}`
-    const block = `${label}\n\n${escapeReminder(body)}`
+    const scope = rule.group ? ` (group: ${String(rule.group)}${rule.module ? `, module: ${String(rule.module)}` : ''})` : ''
+    const block = `Instructions from: ${rule.path}${scope}\n\n${escapeReminder(body)}`
     const size = Buffer.byteLength(block, 'utf8')
     if (bytes + size > maxBytes) {
       parts.push(`[VibeStack: remaining rules were omitted to stay within ${maxBytes} bytes]`)
@@ -84,6 +168,18 @@ export async function renderRules(plan, options = {}) {
     bytes += size
     parts.push(block)
     paths.push(rule.path)
+  }
+
+  if (indexed.length > 0) {
+    const index = [
+      'Other VibeStack rules apply to specific directories and are not injected here. Read the matching file when the task touches those paths:',
+      ...indexed,
+    ].join('\n')
+    const size = Buffer.byteLength(index, 'utf8')
+    if (bytes + size <= maxBytes) {
+      bytes += size
+      parts.push(index)
+    }
   }
 
   if (parts.length === 0) return null

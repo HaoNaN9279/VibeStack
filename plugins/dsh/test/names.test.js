@@ -24,6 +24,17 @@ test('canonicalName joins prefix, group, and name', () => {
   assert.equal(canonicalName('vibestack', 'core', '***'), '')
 })
 
+test('canonicalName inserts a module segment only when one is given', () => {
+  assert.equal(
+    canonicalName('vibestack', 'unity-framework', 'physics-tips', { module: 'battle' }),
+    'vibestack-unity-framework-battle-physics-tips',
+  )
+  assert.equal(
+    canonicalName('vibestack', 'unity-framework', 'physics-tips'),
+    'vibestack-unity-framework-physics-tips',
+  )
+})
+
 test('canonicalName truncates with a stable hash', () => {
   const name = 'a'.repeat(60)
   const value = canonicalName('vibestack', 'multi-agent-collaboration', name, { maxLength: 48 })

@@ -81,14 +81,17 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 
 ### 命名空间
 
-能力组命令与技能在 DSH 里统一发布为 `vibestack-<group>-<name>`，避免 Core 与领域组
-同名冲突：
+能力组命令与技能在 DSH 里统一发布为 `vibestack-<group>[-<alias>]-<name>`，避免 Core
+与领域组、模块之间同名冲突：
 
-| 能力组 | 原名 | DSH 实际名称 |
-|---|---|---|
-| core | `auto-git-commit` | `/vibestack-core-auto-git-commit` |
-| group-forge | `group-new` | `/vibestack-group-forge-group-new` |
-| core | `caveman`（skill） | `vibestack-core-caveman` |
+| 能力组 | 模块 | 原名 | DSH 实际名称 |
+|---|---|---|---|
+| core | — | `auto-git-commit` | `/vibestack-core-auto-git-commit` |
+| group-forge | — | `group-new` | `/vibestack-group-forge-group-new` |
+| unity-framework | `battle` | `battle-build` | `/vibestack-unity-framework-battle-battle-build` |
+| core | — | `caveman`（skill） | `vibestack-core-caveman` |
+
+宿主名由 resolver 在 `plan.names` 中给出；插件不自行拼接，超过 48 字符时由 resolver 截断加哈希。
 
 命令 handler 在每次执行前重新读取当前工作区计划：Core 命令在任何 VibeStack 会话都可
 执行；领域组命令只有在当前工作区激活了该组时才执行，否则返回
@@ -138,15 +141,23 @@ DSH 的本机配置逐层覆盖：
 
 | VibeStack 计划 | DSH 机制 | 作用域 |
 |---|---|---|
-| `rules` | `agent/pre-step` 注入持久 `<system-reminder>` 用户消息 | 仅 VibeStack 模式 |
-| `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能；能力组技能改名 `vibestack-<group>-<name>` | 该 agent |
-| `commands` | `ctx.commands.register()` 注册 `vibestack-<group>-<name>`，handler 校验当前计划后模板渲染并 `agent.followup()` | 该 agent |
+| `rules` | `agent/pre-step` 注入持久 `<system-reminder>` 用户消息；按 `scope`/`paths` 与当前工作目录过滤 | 仅 VibeStack 模式 |
+| `skills` | `ctx.skills.registerProvider('vibestack')` + 自带 `vibestack` 技能；能力组技能改名 `vibestack-<group>[-<alias>]-<name>` | 该 agent |
+| `commands` | `ctx.commands.register()` 注册 `vibestack-<group>[-<alias>]-<name>`，handler 校验当前计划后模板渲染并 `agent.followup()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
 | `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
 
 名册、命令、技能都是 **Core + 当前工作区并集**；名册包含全部 Agent（含 `mode: subagent`），
-人设菜单只展示 primary/all；Agent 行额外带 `group`，用于菜单标注。命令模板支持
+人设菜单只展示 primary/all；Agent 行额外带 `group` / `module`，用于菜单标注。命令模板支持
 `$ARGUMENTS`、`$1`..`$9`；`` !`cmd` `` 与 `@file` 不展开。
+
+规则注入细节：
+
+- `global` 规则恒注入；`module` / `paths` 规则只在会话工作目录命中时注入。
+- `always: false` 的规则不占正文预算，只在末尾索引里列一行 `id: description`。
+- `priority` 越大越靠后；`overrides` 已由 resolver 处理，插件不重复去重。
+- 工作目录变化会触发重新解析与重新注入。
+
 
 ## 事件约束
 
@@ -228,8 +239,8 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `maxRulesBytes` | `65536` | 规则上下文上限 |
 | `defaultAgent` | `''` | 默认 Agent 名；空则优先 `Athena` |
 
-> `resolveMode: vibestack` 需要 CLI 输出 `schema_version >= 2`。旧 CLI 不支持
-> `--mode`，会返回错误；此时插件失败开放（不注入），并提示升级 `vibe-stack`。
+> `resolveMode: vibestack` 需要 CLI 输出 `schema_version == 2`。插件校验失败时失败开放
+> （不注入），并提示升级 `vibe-stack`；没有旧版本兼容分支。
 
 ## 结构
 

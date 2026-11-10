@@ -31,11 +31,11 @@ function ok(plan) {
   return { stdout: JSON.stringify(plan), stderr: '' }
 }
 
-test('parsePlan accepts v1 and v2 plans', () => {
+test('parsePlan accepts a v2 plan', () => {
   const plan = parsePlan(JSON.stringify(PLAN))
   assert.equal(plan.schema_version, 2)
   assert.equal(plan.active, true)
-  assert.equal(parsePlan(JSON.stringify({ ...PLAN, schema_version: 1 })).schema_version, 1)
+  assert.equal(plan.rules.length, 1)
 })
 
 test('parsePlan strips a BOM', () => {

@@ -9,7 +9,8 @@
 ```text
 capability-groups/core/<version>/          # 常驻能力组
 capability-groups/domain/<name>/<version>/ # 领域能力组
-<project>/.vibestack/groups/<name>/       # 项目独有能力组（无版本目录）
+  └── modules/<path>/                      # 可选模块（无独立版本目录）
+<project>/.vibestack/groups/<name>/       # 项目独有能力组（无版本目录，同构支持 modules/）
 tools/<name>/<version>/                    # 工具包
 plugins/<agent>/                           # Agent 插件适配器
 src/vibe_stack/                            # Python 核心
@@ -23,14 +24,18 @@ tests/                                     # pytest
 3. 项目部署只写 `.vibestack/`，不复制、不链接内容到 `.dsh/` 等 Agent 私有目录。
 4. Core 的加载规则按 resolve 模式区分：`project` 模式只在项目存在 `.vibestack/stack.json` 时加载；`vibestack` 模式（DSH VibeStack 会话）**无条件加载**，即使目录不是项目根。
 5. Domain 能力组只在 `.vibestack/stack.json` 的 `groups` 中列出时加载，不默认激活。
-6. 加载顺序：Core → `groups` 数组顺序 → `extends` 依赖优先。
-7. 同名 Agent / 命令 / MCP：后加载覆盖；规则和技能路径追加。
+6. 加载顺序：Core → `groups` 数组顺序 → `extends` 依赖优先 → 组内 `depends` 拓扑 + 路径字典序。
+7. 同名 Agent / 命令 / MCP：后加载覆盖；规则和技能路径追加。只有同一个限定 id 重复（同组同模块同名同类）才报错：`resolve` 告警保留后者，`sync` / `validate` 失败。
 8. 插件不得修改 Agent 的主配置文件或用户 profile 组合（DSH 的 `cordis.patch.yml` 只由插件自己的 bundle 提供）。
 9. 已发布版本目录不可修改；升级新增版本目录，`guid` 不变。
 10. 工具统一通过 `vibe-stack tool ...` 调用，不写死绝对路径。
 11. 能力组 Agent / 命令 / 技能只允许声明可选的 `model: <layer id>`（平台默认层 `fast` / `standard` / `strong` / `vision`）；provider、具体模型名、temperature、permission、reasoningEffort 等宿主参数不得进入能力组。四层默认路由只放在项目 `.vibestack/models.json`，本机可在全局配置逐层覆盖。
 12. 插件通过 `vibe-stack resolve --json [--mode vibestack]` 获取注入计划，通过 `vibe-stack models show --json` 获取模型层目录、生效绑定与默认层；不自行解析能力组目录、版本、`extends`、frontmatter 或项目模型文件优先级。
-13. DSH 能力组命令与技能统一为 `vibestack-<group>-<name>`；会话的 Agent / 命令 / 技能列表是 Core + 当前工作区并集，子 Agent 会话沿用同一规则。
+13. DSH 能力组命令与技能统一为 `vibestack-<group>[-<module-alias>]-<name>`；会话的 Agent / 命令 / 技能列表是 Core + 当前工作区并集，子 Agent 会话沿用同一规则。
+14. 模块（`modules/<path>/`）随组版本发布，不单独建版本目录、不跨组引用；跨组复用走组的 `extends`。模块不写 `guid` / `version` / `permissions` / `model`。
+15. 组根内容是全局默认，模块内容是局部覆盖；模块路径必须匹配 `^[a-z0-9]+(-[a-z0-9]+)*(/...)*$`，深度 ≤3，同组 `alias` 唯一。
+16. 规则 frontmatter 除 `name` 外全部可选；`scope` 只用 `global` / `module` / `paths`，没有 `scope` 时按组根 `global`、模块 `paths` 或 `module` 推断。
+17. `.vibestack/stack.json` 的 `schema_version` 必须为 `2`；不做旧格式兼容，旧内容通过改写迁移。
 
 ## Python 规范
 
