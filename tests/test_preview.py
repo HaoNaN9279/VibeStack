@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -302,6 +303,21 @@ def test_rule_selection_matches_rules_show(game: tuple[Path, Path]) -> None:
     # selection as a set: `rules show` reports plain plan order.
     assert sorted(loaded) == sorted(matched)
     assert set(loaded).isdisjoint(skipped_ids)
+
+
+def test_rule_bytes_keep_crlf_like_the_plugin(tmp_path: Path) -> None:
+    """The plugin reads files with `readFile`, so CRLF must survive here too."""
+    from vibe_stack.model import ResolvedRule
+    from vibe_stack.rules import plan_rules
+
+    file = tmp_path / "crlf.md"
+    file.write_bytes(b"---\r\nname: crlf\r\n---\r\n\r\n# CRLF\r\n\r\nBody.\r\n")
+    body = read_body(str(file))
+    assert body == "# CRLF\r\n\r\nBody."
+    plan = SimpleNamespace(rules=[ResolvedRule(name="crlf", path=str(file), group="core", id="core/crlf")], groups=[])
+    planned = plan_rules(plan, "", max_bytes=65536)
+    block = f"Instructions from: {file} (group: core)\n\n{body}"
+    assert planned.injected[0].bytes == len(block.encode("utf-8"))
 
 
 def test_strip_frontmatter_matches_plugin() -> None:

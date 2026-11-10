@@ -111,9 +111,13 @@ def strip_frontmatter(text: str) -> str:
 
 
 def read_body(path: str) -> str | None:
-    """Read one content file as UTF-8 without frontmatter."""
+    """Read one content file as UTF-8 without frontmatter.
+
+    Bytes are decoded directly so line endings survive: the plugin reads the
+    same files with ``readFile``, and the byte budget has to match exactly.
+    """
     try:
-        return strip_frontmatter(Path(path).read_text(encoding="utf-8-sig"))
+        return strip_frontmatter(Path(path).read_bytes().decode("utf-8-sig"))
     except (OSError, UnicodeError):
         return None
 
