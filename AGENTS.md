@@ -36,6 +36,7 @@ tests/                                     # pytest
 15. 组根内容是全局默认，模块内容是局部覆盖；模块路径必须匹配 `^[a-z0-9]+(-[a-z0-9]+)*(/...)*$`，深度 ≤3，同组 `alias` 唯一。
 16. 规则 frontmatter 除 `name` 外全部可选；`scope` 只用 `global` / `module` / `paths`，没有 `scope` 时按组根 `global`、模块 `paths` 或 `module` 推断。
 17. `.vibestack/stack.json` 的 `schema_version` 必须为 `2`；不做旧格式兼容，旧内容通过改写迁移。
+18. 能力组、工具包、插件与文档的任何内容都不写本地绝对路径；引用一律用组内/项目内相对路径，必须指向外部位置时用 `<project-root>`、`$HOME`、`%ProgramFiles%` 之类占位符，并说明由用户按自己的路径替换。
 
 ## Python 规范
 

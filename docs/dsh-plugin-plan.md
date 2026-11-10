@@ -5,7 +5,7 @@
 | 文档版本 | 2.3（OpenCode 退场；R7–R10；模型层核心与增量选择器） |
 | 日期 | 2026-11-07 |
 | 目标运行环境 | DSH `0.2.1-rc.5`（桌面版 / web profile） |
-| 插件 | `dsh-vibestack`（`D:\workspace\VibeStack\plugins\dsh`，本地 `dsh plugin add` 安装） |
+| 插件 | `dsh-vibestack`（本仓库 `plugins/dsh`，本地 `dsh plugin add` 安装） |
 | 范围 | 只自用：不发布 npm、不上架插件市场、不走 DSH 官方验证/审核流程 |
 | 关联 | HNFlow 插件（`dsh-hnflow`）**强依赖**本插件；本插件不知道 HNFlow 存在（单向依赖） |
 | 文档状态 | 方案稿 + 实施记录。§4（OpenCode 退场）、§7（层服务/设置页/选择器，含可选 `replace`）、§9 根级 core 行、§16–§19 与 §8.3 已实施；剩余主要是 GUI 手工验收 |

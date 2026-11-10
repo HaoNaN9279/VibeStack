@@ -23,6 +23,14 @@ name: group-authoring
 - 新增/移动模块后运行 `vibe-stack validate` 与 `vibe-stack list --tree`，确认激活集与命名符合预期。
 
 
+## 路径
+
+- 任何内容都不写本地绝对路径（含盘符路径、用户主目录路径、本机安装路径）。
+- 组内引用一律用相对路径：相对组根（`rules/xx.md`、`modules/battle/rules/xx.md`）或相对项目根（`Assets/Battle/**`）。
+- 必须提到外部位置时，用占位符或环境变量（`<project-root>`、`<repo>`、`$HOME`、`%ProgramFiles%`），并说明由用户按自己的安装位置替换。
+- 涉及用户自定义路径时，只描述「由用户在 `stack.json`、命令参数或环境变量中提供」，不假设固定目录。
+- 示例、日志、命令输出里也不要粘贴本机路径；需要举例时用假路径并以 `<...>` 标注可替换部分。
+
 ## 版本与标识
 
 - `group.json` 的 `name`、`version` 必须与目录名一致；`guid` 跨版本保持不变。

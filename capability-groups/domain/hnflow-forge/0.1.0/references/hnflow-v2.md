@@ -1,6 +1,6 @@
 # HNFlow 定义速查（dsh-hnflow 0.6.0 / schemaVersion 2）
 
-来源：`D:\workspace\HNFlow\plugins\dsh`（`lib/flow/*`、`lib/tools.js`、`lib/author.js`、`lib/commands.js`、`lib/scheduler.js`）。插件升级时同步本文件。
+来源：HNFlow 项目的 `plugins/dsh`（`lib/flow/*`、`lib/tools.js`、`lib/author.js`、`lib/commands.js`、`lib/scheduler.js`）。插件升级时同步本文件。
 
 ## 定义外壳
 

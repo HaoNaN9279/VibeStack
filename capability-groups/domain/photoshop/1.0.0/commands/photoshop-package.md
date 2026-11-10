@@ -30,9 +30,10 @@ description: 将 UXP 插件打包为 .ZXP 归档、应用数字签名、准备 A
 
 **步骤 — UDT CLI（如果可用）：**
 ```bash
-# 定位 UDT CLI（取决于平台）：
-# macOS：/Applications/UXP Developer Tool.app/Contents/MacOS/UXP Developer Tool
-# Windows：C:\Program Files\Adobe\Adobe UXP Developer Tool\UXP Developer Tool.exe
+# 定位 UDT CLI（取决于平台与安装位置）：
+# macOS：Applications 目录下 `UXP Developer Tool.app/Contents/MacOS/UXP Developer Tool`
+# Windows：`%ProgramFiles%\Adobe\Adobe UXP Developer Tool\UXP Developer Tool.exe`
+# 若安装在自定义目录，按实际位置替换；或把 UDT 目录加入 PATH 后直接调用
 
 # UDT CLI 打包语法：
 uxp package --input ./path/to/plugin --output ./dist/MyPlugin.zxp

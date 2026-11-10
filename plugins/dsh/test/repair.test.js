@@ -10,12 +10,14 @@ import zlib from 'node:zlib'
 import { REPAIRED_ROSTER_TYPE as PLUGIN_ROSTER_TYPE } from '../lib/agents.js'
 import { LEGACY_TYPES, REPAIRED_ROSTER_TYPE, decodeLog, encodeLog, repairFile, repairLog, scanZstdFrames } from '../scripts/repair-session-events.mjs'
 
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
+
 const HEADER = {
   type: 'session',
   version: 4,
   id: 'session-repair',
   createdAt: 1,
-  cwd: 'D:\\workspace\\VibeStack',
+  cwd: REPO_ROOT,
   isSeeded: false,
   delegationDepth: 0,
   agentPreset: 'vibestack',
@@ -153,7 +155,7 @@ const ROSTER = {
   version: 1,
   key: 'roster-key',
   agents: [{ name: 'Athena', description: 'planner', mode: 'all', group: 'core', model: '' }],
-  project: 'D:\\workspace\\VibeStack',
+  project: REPO_ROOT,
   defaultSelected: 'Athena',
 }
 

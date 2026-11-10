@@ -196,7 +196,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
   name: dsh-vibestack
   config:
     role: preset
-    command: 'C:/Users/me/.local/bin/vibe-stack.exe'
+    command: '<vibe-stack 可执行文件路径>'   # 例如已加入 PATH 时直接写 vibe-stack
     timeoutMs: 5000
     resolveMode: vibestack
     namePrefix: vibestack
