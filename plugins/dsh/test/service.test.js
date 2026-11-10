@@ -1,7 +1,7 @@
 /** VibeStack model-layer service: catalog + bindings, validation, and save. */
 
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
@@ -80,6 +80,61 @@ test('project defaults fill every layer and override the default layer', async (
     ])
     assert.equal(service.defaultLayer(), 'strong')
     assert.equal(service.resolveLayer('vision').model, 'deepseek-flash')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('saving custom layers does not freeze project defaults into local config', async () => {
+  const { service, dir, file } = await serviceWith({})
+  try {
+    const routes = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    service.setPlatformBindings(routes, 'standard')
+    await service.reload()
+
+    const result = await saveModels(service, {
+      custom: [{ id: 'my-fast', label: '我的快速', provider: 'deepseek-account', model: 'deepseek-flash' }],
+      default: 'my-fast',
+    })
+    assert.equal(result.ok, true)
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    assert.deepEqual(saved.models.bindings.dsh, {})
+    assert.equal(service.resolveLayer('standard').model, 'deepseek-flash')
+    assert.equal(service.defaultLayer(), 'my-fast')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('saving custom layers keeps explicit local overrides without copying project defaults', async () => {
+  const { service, dir, file } = await serviceWith({
+    models: { bindings: { dsh: { fast: { provider: 'local', model: 'small' } } } },
+  })
+  try {
+    const routes = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    service.setPlatformBindings(routes, 'standard')
+    await service.reload()
+
+    const result = await saveModels(service, {
+      custom: [{ id: 'my-fast', label: '我的快速', provider: 'deepseek-account', model: 'deepseek-flash' }],
+    })
+    assert.equal(result.ok, true)
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    assert.deepEqual(saved.models.bindings.dsh, {
+      fast: { provider: 'local', model: 'small' },
+    })
+    assert.equal(saved.models.default, undefined)
+    assert.equal(service.resolveLayer('standard').model, 'deepseek-flash')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

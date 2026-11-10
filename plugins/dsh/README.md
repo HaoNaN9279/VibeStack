@@ -111,11 +111,15 @@ DSH 的本机配置逐层覆盖：
   `GET/POST /api/vibestack/models`。
 - `GET` 返回平台目录 + 生效绑定状态；`POST` 只接受 `bindings`、`custom` 与 `default`，
   不接受新增/删除平台层；写入只影响本机配置。
-- 设置页 **VibeStack 模型层** 为平台层绑定本机模型，也可新增 `models.custom.dsh`
-  自定义层；自定义层**仅 DSH 可用**，不能写进共享能力组，也不能被其他 Agent 使用。
+- 设置页 **VibeStack 模型层** 中四个平台层只读灰显，默认层由项目配置决定；设置页只新增、
+  编辑或删除 `models.custom.dsh` 自定义层，并可把默认层切到自定义层或恢复项目默认。保存时
+  只写 `custom` 与 `default`，不会把项目默认绑定复制进本机配置。自定义层**仅 DSH 可用**，
+  不能写进共享能力组，也不能被其他 Agent 使用。
 - **右下角模型位替换为模型层选择**：`modelSelector: replace`（默认）用低 priority 遮蔽
-  `conversation.input.model`；VibeStack 会话显示层，其它模式回退到实时原生模型目录。
-  `modelSelector: additive` 可退回“保留原生模型位 + 左下角额外层控件”的兼容形态。
+  `conversation.input.model`；VibeStack 会话显示全部平台层与自定义层，选择层时调用
+  `/vibestack-layer <id>` 并按会话记忆；未绑定或不可路由的层灰显不可选。其它模式回退到
+  实时原生模型目录。`modelSelector: additive` 可退回“保留原生模型位 + 左下角额外层控件”
+  的兼容形态。
 - 未绑定层仍列出但不可应用；应用失败只告警，不阻断人设/命令/技能。
 - **Agent** 人设选择、能力组命令、用户 `/vibestack-<group>-<name>` 技能调用会读取声明的
   `model` 层并通过 `sessionController.selectModel` 应用，从下一请求起生效。

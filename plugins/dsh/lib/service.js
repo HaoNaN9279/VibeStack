@@ -106,11 +106,13 @@ export class VibeStackService {
     this.modelSelector = options.modelSelector === 'replace' ? 'replace' : 'additive'
     this.catalogLayers = []
     this.bindings = {}
+    this.localBindings = {}
     this.platformBindings = {}
     this.platformDefault = null
     this.useDefaults = true
     this.custom = []
     this.default = null
+    this.localDefault = null
     this.warnings = []
     this.digest = stateDigest({ bindings: this.bindings, custom: this.custom, default: null })
     if (Array.isArray(options.catalog)) this.setCatalog(options.catalog)
@@ -285,6 +287,7 @@ export class VibeStackService {
       const reserved = new Set(this.catalogLayers.map((layer) => layer.id))
       const next = await readModels(this.#file, DEFAULT_AGENT, reserved)
       this.useDefaults = next.useDefaults === true
+      this.localBindings = this.useDefaults ? {} : { ...next.bindings }
       if (this.useDefaults) {
         this.bindings = defaultOrPlatform(this.platformBindings, [...reserved])
       } else if (Object.keys(this.platformBindings).length > 0) {
@@ -293,6 +296,7 @@ export class VibeStackService {
         this.bindings = next.bindings
       }
       this.custom = normalizeCustomLayers(next.custom, [], reserved)
+      this.localDefault = typeof next.default === 'string' ? next.default : null
       this.default = next.default ?? this.platformDefault
       this.warnings = [
         ...next.warnings,
@@ -346,7 +350,10 @@ export class VibeStackService {
       custom = normalizeCustomLayers(customRaw, warnings, platformIds)
     } else {
       if (proposed.bindings === undefined) {
-        for (const [id, binding] of Object.entries(this.bindings)) {
+        // Preserve only explicit local overrides. `this.bindings` is the
+        // effective route map (project defaults merged in), so copying it here
+        // would freeze project defaults into the user's machine config.
+        for (const [id, binding] of Object.entries(this.localBindings)) {
           if (platformIds.has(id)) bindings[id] = { ...binding }
         }
       } else if (!proposed.bindings || typeof proposed.bindings !== 'object' || Array.isArray(proposed.bindings)) {
@@ -369,7 +376,7 @@ export class VibeStackService {
     }
 
     let defaultId = proposed.default === undefined
-      ? this.default
+      ? this.localDefault
       : typeof proposed.default === 'string'
         ? proposed.default.trim()
         : null

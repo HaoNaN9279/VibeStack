@@ -110,6 +110,8 @@ model: fast
 
 `models bind` / `unbind` / `default` 只写全局配置，不会把项目默认值复制进 home。旧 `models.layers` 读取兼容，迁移用 `vibe-stack models migrate`，`flash` → `fast`。DSH 自定义层放在 `models.custom.dsh`，仅 DSH 设置页或插件可读写。
 
+DSH 设置页中四个平台层只读灰显，默认层由项目配置决定；设置页只管理 DSH 自定义层。保存自定义层时只写 `custom` 与 `default`，不会把项目默认或生效绑定复制进本机配置。
+
 ## 7. CLI
 
 ```bash

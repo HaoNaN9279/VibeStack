@@ -234,13 +234,19 @@ window.__ModuleLoader__.load({
 
     /**
      * Derive the active layer from a session's model projection.
+     *
+     * Several default layers can share one route (all four default to
+     * `deepseek-flash`), so a preferred id breaks the tie without hiding the
+     * route-based fallback.
+
      * @param {object[]} layers - configured layers.
      * @param {object | undefined} selection - `{provider, model, reasoningEffort?}`.
+     * @param {string | null} [preferredId] - layer to prefer when several match.
      * @returns {object | undefined} matching layer.
      */
-    function activeLayer(layers, selection) {
+    function activeLayer(layers, selection, preferredId = null) {
       if (!selection || typeof selection !== "object") return undefined;
-      return layers.find(
+      const matches = layers.filter(
         (layer) =>
           layer.bound !== false &&
           typeof layer.provider === "string" &&
@@ -249,6 +255,7 @@ window.__ModuleLoader__.load({
           layer.model === selection.model &&
           (layer.reasoningEffort === undefined || layer.reasoningEffort === selection.reasoningEffort)
       );
+      return matches.find((layer) => layer.id === preferredId) ?? matches[0];
     }
 
     /**
@@ -517,12 +524,6 @@ window.__ModuleLoader__.load({
         void load();
       }, [load]);
 
-      const toBinding = (layer) => ({
-        provider: layer.provider,
-        model: layer.model,
-        ...(layer.reasoningEffort ? { reasoningEffort: layer.reasoningEffort } : {})
-      });
-
       const toCustom = (layer) => ({
         id: layer.id,
         label: layer.label,
@@ -533,26 +534,22 @@ window.__ModuleLoader__.load({
       });
 
       const snapshot = (overrideId = null) => {
-        const bindings = {};
         const custom = [];
         for (const layer of layers) {
           if (overrideId !== null && layer.id === overrideId) continue;
-          if (layer.custom) {
-            custom.push(toCustom(layer));
-          } else if (layer.bound !== false && layer.provider && layer.model) {
-            bindings[layer.id] = toBinding(layer);
-          }
+          if (layer.custom) custom.push(toCustom(layer));
         }
-        return { bindings, custom };
+        return { custom };
       };
 
-      const publish = async (nextBindings, nextCustom, nextDefault) => {
+      const publish = async (nextCustom, nextDefault) => {
         setBusy(true);
         setMessage(null);
         setError(null);
         try {
+          // Platform bindings stay owned by `.vibestack/models.json`; omitting
+          // `bindings` asks the service to keep only explicit local overrides.
           const payload = await writeLayerConfig({
-            bindings: nextBindings,
             custom: nextCustom,
             default: nextDefault
           });
@@ -566,40 +563,37 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const defaultFor = (custom, candidate) =>
+        candidate !== null && custom.some((layer) => layer.id === candidate) ? candidate : null;
+
       const save = async () => {
-        if (draft === null) return;
+        if (draft === null || !draft.custom) return;
         const originalId = draft._originalId ?? draft.id;
-        const { bindings, custom } = snapshot(originalId);
-        if (draft.custom) {
-          if (!draft.id) {
-            setError("自定义层需要 id");
-            return;
-          }
-          custom.push(toCustom(draft));
-        } else if (draft.provider && draft.model) {
-          bindings[draft.id] = toBinding(draft);
+        const { custom } = snapshot(originalId);
+        if (!draft.id) {
+          setError("自定义层需要 id");
+          return;
         }
-        const nextDefault = defaultId === originalId
-          ? (draft.provider && draft.model ? draft.id : null)
-          : defaultId;
-        await publish(bindings, custom, nextDefault);
+        custom.push(toCustom(draft));
+        const nextDefault = defaultId === originalId ? draft.id : defaultId;
+        await publish(custom, defaultFor(custom, nextDefault));
         setDraft(null);
       };
 
       const removeCustom = async (layer) => {
-        const { bindings, custom } = snapshot(layer.id);
-        await publish(bindings, custom, defaultId === layer.id ? null : defaultId);
-      };
-
-      const clearBinding = async (layer) => {
-        const { bindings, custom } = snapshot(layer.id);
-        await publish(bindings, custom, defaultId === layer.id ? null : defaultId);
+        const { custom } = snapshot(layer.id);
+        await publish(custom, defaultFor(custom, defaultId === layer.id ? null : defaultId));
       };
 
       const makeDefault = async (layer) => {
-        if (layer.bound === false) return;
-        const { bindings, custom } = snapshot();
-        await publish(bindings, custom, defaultId === layer.id ? null : layer.id);
+        if (layer.bound === false || !layer.custom) return;
+        const { custom } = snapshot();
+        await publish(custom, defaultFor(custom, defaultId === layer.id ? null : layer.id));
+      };
+
+      const resetDefault = async () => {
+        const { custom } = snapshot();
+        await publish(custom, null);
       };
 
       const field = (key, placeholder, value, onInput, type = "text") =>
@@ -632,12 +626,13 @@ window.__ModuleLoader__.load({
       const routeOf = (layer) => layer.bound === false
         ? "未绑定本机模型"
         : `${layer.provider}/${layer.model}${layer.reasoningEffort ? " · " + layer.reasoningEffort : ""}`;
+      const customDefault = layers.some((layer) => layer.custom && layer.id === defaultId);
 
       return h(
         "div",
         { style: { display: "flex", flexDirection: "column", gap: "14px", padding: "4px 0 20px" } },
         h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)", lineHeight: "19px" } },
-          "模型层目录由 VibeStack 平台统一提供。这里只为平台层绑定本机模型；自定义层仅 DSH 可用，不会进入能力组。能力组只写 model: <layer>。"),
+          "四个平台层由项目 .vibestack/models.json 提供，此处只读显示，默认层也由项目配置决定。本页只管理仅 DSH 可用的自定义层；能力组只写 model: <layer>。"),
         error ? h("div", { style: { color: "var(--dsw-alias-state-error-primary, #d33)", fontSize: "12px" } }, error) : null,
         message ? h("div", { style: { color: "var(--dsw-alias-state-success-primary, #2a7)", fontSize: "12px" } }, message) : null,
         catalog && !catalog.error
@@ -649,12 +644,20 @@ window.__ModuleLoader__.load({
           : null,
         layers.length === 0
           ? h("div", { style: { fontSize: "13px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "模型层目录不可用（检查 vibe-stack 安装与版本）。")
-          : h("div", null, layers.map((layer) =>
-              h("div", { key: layer.id, style: rowStyle },
+          : h("div", null, layers.map((layer) => {
+              const readOnly = !layer.custom;
+              return h("div", {
+                key: layer.id,
+                style: readOnly
+                  ? Object.assign({}, rowStyle, { opacity: 0.55 })
+                  : rowStyle
+              },
                 h("button", {
                   type: "button",
-                  title: layer.bound === false ? "未绑定，不能设为默认层" : "设为默认层",
-                  disabled: layer.bound === false || busy,
+                  title: readOnly
+                    ? "平台层默认由项目配置决定"
+                    : layer.bound === false ? "未绑定，不能设为默认层" : "设为默认层",
+                  disabled: readOnly || layer.bound === false || busy,
                   onClick: () => void makeDefault(layer),
                   style: {
                     flex: "none",
@@ -664,29 +667,32 @@ window.__ModuleLoader__.load({
                     border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.4))",
                     background: defaultId === layer.id ? "var(--dsw-alias-state-business-primary, #4a7)" : "transparent",
                     color: "transparent",
-                    cursor: layer.bound === false ? "default" : "pointer"
+                    cursor: readOnly || layer.bound === false ? "default" : "pointer"
                   }
                 }, "•"),
                 h("div", { style: { display: "flex", flexDirection: "column", minWidth: 0, flex: "1 1 auto" } },
                   h("span", { style: { fontSize: "13px", fontWeight: 500 } },
-                    `${layer.label} (${layer.id})${layer.custom ? " · 自定义" : ""}`),
+                    `${layer.label} (${layer.id})${layer.custom ? " · 自定义" : " · 平台"}`),
                   h("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)" } },
                     `${routeOf(layer)}${defaultId === layer.id ? " · 默认" : ""}`)
                 ),
-                h("button", { type: "button", onClick: () => setDraft({ ...layer, _originalId: layer.id }), style: smallButton }, "编辑"),
-                layer.custom
-                  ? h("button", { type: "button", disabled: busy, onClick: () => void removeCustom(layer), style: smallButton }, "删除")
-                  : layer.bound !== false
-                    ? h("button", { type: "button", disabled: busy, onClick: () => void clearBinding(layer), style: smallButton }, "清除绑定")
-                    : null
-              )
-            )),
+                readOnly
+                  ? h("span", { style: { flex: "none", fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)" } }, "项目配置")
+                  : h(react.Fragment, null,
+                      h("button", { type: "button", onClick: () => setDraft({ ...layer, _originalId: layer.id }), style: smallButton }, "编辑"),
+                      h("button", { type: "button", disabled: busy, onClick: () => void removeCustom(layer), style: smallButton }, "删除")
+                    )
+              );
+            })),
         h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
           h("button", {
             type: "button",
             onClick: () => setDraft({ id: "", label: "", description: "", provider: "", model: "", reasoningEffort: "", custom: true }),
             style: primaryButton
           }, "新增自定义层（仅 DSH）"),
+          customDefault
+            ? h("button", { type: "button", disabled: busy, onClick: () => void resetDefault(), style: smallButton }, "恢复项目默认层")
+            : null,
           h("button", { type: "button", onClick: () => void load(), style: smallButton }, "检测路由 / 重新读取")
         ),
         draft === null
@@ -733,6 +739,8 @@ window.__ModuleLoader__.load({
       );
       const snapshot = react.useSyncExternalStore(subscribe, getSnapshot);
       const [layers, setLayers] = react.useState([]);
+      const [defaultLayerId, setDefaultLayerId] = react.useState(null);
+      const [selectedLayerId, setSelectedLayerId] = react.useState(null);
       const [open, setOpen] = react.useState(false);
       const [busy, setBusy] = react.useState(false);
       const [active, setActive] = react.useState(0);
@@ -750,7 +758,41 @@ window.__ModuleLoader__.load({
       const isVibeStack = preset === "vibestack";
       const current = snapshot && snapshot.current ? snapshot.current : null;
       const groups = snapshot && Array.isArray(snapshot.groups) ? snapshot.groups : [];
-      const layer = isVibeStack ? activeLayer(layers, current) : undefined;
+      const storageKey = typeof props.sessionId === "string" && props.sessionId.length > 0
+        ? `vibestack:selected-layer:${props.sessionId}`
+        : null;
+      const remembered = layers.find((entry) => entry.id === selectedLayerId && entry.bound !== false);
+      const rememberedMatches = remembered !== undefined &&
+        current !== null &&
+        remembered.provider === current.provider &&
+        remembered.model === current.model &&
+        (remembered.reasoningEffort ?? "") === (current.reasoningEffort ?? "");
+      const layer = isVibeStack
+        ? (rememberedMatches ? remembered : activeLayer(layers, current, defaultLayerId))
+        : undefined;
+
+      const remember = react.useCallback((id) => {
+        setSelectedLayerId(id);
+        if (storageKey === null) return;
+        try {
+          if (id === null) window.sessionStorage.removeItem(storageKey);
+          else window.sessionStorage.setItem(storageKey, id);
+        } catch {
+          // Storage can be unavailable in hardened browser contexts.
+        }
+      }, [storageKey]);
+
+      react.useEffect(() => {
+        if (!isVibeStack || storageKey === null) {
+          setSelectedLayerId(null);
+          return;
+        }
+        try {
+          setSelectedLayerId(window.sessionStorage.getItem(storageKey));
+        } catch {
+          setSelectedLayerId(null);
+        }
+      }, [isVibeStack, storageKey]);
 
       react.useEffect(() => {
         if (!props.available) return;
@@ -759,7 +801,9 @@ window.__ModuleLoader__.load({
         let alive = true;
         readLayerConfig()
           .then((payload) => {
-            if (alive) setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+            if (!alive) return;
+            setLayers(Array.isArray(payload.layers) ? payload.layers : []);
+            setDefaultLayerId(typeof payload.default === "string" ? payload.default : null);
           })
           .catch(() => {
             if (alive) setLayers([]);
@@ -837,14 +881,20 @@ window.__ModuleLoader__.load({
       );
       const layerOptions = layers.map((entry) => ({
         key: entry.id,
+        layerId: entry.id,
         label: entry.label,
-        detail: `${entry.provider}/${entry.model}${entry.reasoningEffort ? " · " + entry.reasoningEffort : ""}`,
+        detail: entry.bound === false
+          ? "未绑定本机模型"
+          : `${entry.provider}/${entry.model}${entry.reasoningEffort ? " · " + entry.reasoningEffort : ""}`,
         selected: layer !== undefined && layer.id === entry.id,
-        selection: {
-          provider: entry.provider,
-          model: entry.model,
-          ...(entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort })
-        }
+        disabled: entry.bound === false,
+        selection: entry.bound === false
+          ? undefined
+          : {
+              provider: entry.provider,
+              model: entry.model,
+              ...(entry.reasoningEffort === undefined ? {} : { reasoningEffort: entry.reasoningEffort })
+            }
       }));
       const options = isVibeStack ? layerOptions.concat(nativeOptions) : nativeOptions;
       const nativeName = current ? nativeNames.get(`${current.provider}/${current.model}`) : undefined;
@@ -853,16 +903,28 @@ window.__ModuleLoader__.load({
         : nativeName ?? current?.model ?? "选择模型";
 
       const choose = async (option) => {
-        if (busy || option.selected) {
+        if (busy || option.selected || option.disabled) {
           setOpen(false);
           return;
         }
         restoreFocus.current = true;
         setBusy(true);
         try {
-          const result = await props.select(option.selection);
-          if (result && result.ok === false) {
-            throw new Error(`${result.error?.code ?? "model-unavailable"}: ${result.error?.message ?? ""}`);
+          if (option.layerId && typeof props.selectLayer === "function") {
+            // Apply by layer id instead of provider/model: the four default
+            // layers can share one route, so only the command can tell them
+            // apart.
+            const result = await props.selectLayer(option.layerId);
+            if (result && result.ok === false) {
+              throw new Error(`${result.error?.code ?? "layer-unavailable"}: ${result.error?.message ?? ""}`);
+            }
+            remember(option.layerId);
+          } else {
+            const result = await props.select(option.selection);
+            if (result && result.ok === false) {
+              throw new Error(`${result.error?.code ?? "model-unavailable"}: ${result.error?.message ?? ""}`);
+            }
+            remember(null);
           }
         } catch (failure) {
           console.warn("[vibestack] model selection failed", failure);
@@ -945,8 +1007,14 @@ window.__ModuleLoader__.load({
                           type: "button",
                           role: "menuitemradio",
                           "aria-checked": option.selected,
+                          "aria-disabled": option.disabled === true,
                           tabIndex: -1,
-                          style: index === active ? Object.assign({}, styles.item, styles.itemActive) : styles.item,
+                          style: Object.assign(
+                            {},
+                            styles.item,
+                            option.disabled ? { opacity: 0.5, cursor: "default" } : {},
+                            index === active ? styles.itemActive : {}
+                          ),
                           onMouseEnter: () => setActive(index),
                           onClick: () => void choose(option)
                         },
@@ -1366,12 +1434,26 @@ window.__ModuleLoader__.load({
                       const available = sessions.subagentAddress(sessionId) === undefined;
                       return {
                         available,
+                        sessionId,
                         directory: directory.store,
                         load: () => {
                           if (available) directory.load().catch(() => {});
                         },
                         select: (selection) =>
-                          available ? directory.select(selection) : Promise.resolve(undefined)
+                          available ? directory.select(selection) : Promise.resolve(undefined),
+                        selectLayer: async (id) => {
+                          const result = await ctx.remote.commands.execute(
+                            sessionId,
+                            "/vibestack-layer " + id,
+                            []
+                          );
+                          if (result && result.ok === false) {
+                            throw new Error(
+                              `vibestack: ${result.error?.code ?? "command-failed"}: ${result.error?.message ?? ""}`
+                            );
+                          }
+                          return result;
+                        }
                       };
                     }
                   },
