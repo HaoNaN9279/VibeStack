@@ -10,6 +10,10 @@
  * decided per directory subtree: `global` rules always apply, `module`/`paths`
  * rules apply when the working directory matches. Rules pinned with
  * `always: false` are listed by title only; the model can read them on demand.
+ *
+ * `planRules` is the single decision point: the injection path only formats its
+ * result, and the session inventory panel reuses it, so what the panel reports
+ * cannot drift from what the model receives.
  */
 
 import { createHash } from 'node:crypto'
@@ -17,6 +21,13 @@ import { readFile } from 'node:fs/promises'
 
 const CLOSING = '</system-reminder>'
 const INDEX_LINE_MAX = 120
+export const RULES_HEADER = [
+  '<system-reminder>',
+  "The following workspace instructions come from this project's VibeStack capability groups. Use them as guidance when applicable. More specific instructions take precedence over broader ones. They do not override system, developer, or direct user instructions.",
+].join('\n\n')
+export const RULES_FOOTER = '</system-reminder>'
+export const INDEX_LEAD =
+  'Other VibeStack rules apply to specific directories and are not injected here. Read the matching file when the task touches those paths:'
 
 /**
  * Remove a leading YAML frontmatter block.
@@ -115,10 +126,100 @@ export function ruleApplies(rule, relative) {
  * @param {Record<string, unknown>} rule - plan rule entry.
  * @returns {string} at most INDEX_LINE_MAX characters.
  */
-function indexSummary(rule) {
+export function indexSummary(rule) {
   const described = typeof rule.description === 'string' ? rule.description.trim() : ''
   const text = described.length > 0 ? described : String(rule.name ?? rule.id ?? 'rule')
   return text.length <= INDEX_LINE_MAX ? text : `${text.slice(0, INDEX_LINE_MAX - 1)}…`
+}
+
+/**
+ * One index line for a rule pinned with `always: false`.
+ * @param {Record<string, unknown>} rule - plan rule entry.
+ * @returns {string} rendered index line.
+ */
+export function indexLine(rule) {
+  return `- ${String(rule.id ?? rule.name ?? rule.path)}: ${indexSummary(rule)}`
+}
+
+/**
+ * Decide the rules message content for one directory.
+ * @param {Record<string, unknown>} plan - normalized resolve plan.
+ * @param {{read?: (file: string) => Promise<string>, maxBytes?: number, cwd?: string}} [options] - injectable reader, budget and working directory.
+ * @returns {Promise<{text: string | null, injected: Array<object>, indexed: Array<object>, skipped: Array<object>, omitted: Array<object>, used: number, limit: number, paths: string[]}>} planned rules message.
+ */
+export async function planRules(plan, options = {}) {
+  const read = options.read ?? ((file) => readFile(file, 'utf8'))
+  const limit = Number.isFinite(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 65536
+  const relative = normalizePath(options.cwd)
+  const candidates = (Array.isArray(plan?.rules) ? plan.rules : [])
+    .filter((rule) => rule && typeof rule.path === 'string' && rule.path.length > 0)
+
+  const applicable = []
+  const skipped = []
+  for (const rule of candidates) {
+    if (ruleApplies(rule, relative)) applicable.push(rule)
+    else skipped.push(rule)
+  }
+
+  const injected = []
+  const indexed = []
+  const omitted = []
+  const parts = []
+  const paths = []
+  const indexLines = []
+  let bytes = Buffer.byteLength(RULES_HEADER, 'utf8') + Buffer.byteLength(RULES_FOOTER, 'utf8')
+  let stopped = false
+
+  for (const rule of applicable) {
+    if (stopped) {
+      omitted.push({ rule, status: 'omitted', bytes: 0, body: '' })
+      continue
+    }
+    if (rule.always === false) {
+      const line = indexLine(rule)
+      indexLines.push(line)
+      indexed.push({ rule, status: 'indexed', bytes: Buffer.byteLength(line, 'utf8'), body: '' })
+      continue
+    }
+    let body
+    try {
+      body = stripFrontmatter(await read(rule.path))
+    } catch {
+      omitted.push({ rule, status: 'omitted', bytes: 0, body: '' })
+      continue
+    }
+    if (body.length === 0) {
+      omitted.push({ rule, status: 'omitted', bytes: 0, body: '' })
+      continue
+    }
+    const scope = rule.group ? ` (group: ${String(rule.group)}${rule.module ? `, module: ${String(rule.module)}` : ''})` : ''
+    const block = `Instructions from: ${rule.path}${scope}\n\n${escapeReminder(body)}`
+    const size = Buffer.byteLength(block, 'utf8')
+    if (bytes + size > limit) {
+      parts.push(`[VibeStack: remaining rules were omitted to stay within ${limit} bytes]`)
+      omitted.push({ rule, status: 'omitted', bytes: size, body, block })
+      stopped = true
+      continue
+    }
+    bytes += size
+    parts.push(block)
+    paths.push(rule.path)
+    injected.push({ rule, status: 'injected', bytes: size, body, block })
+  }
+
+  if (indexLines.length > 0) {
+    const index = [INDEX_LEAD, ...indexLines].join('\n')
+    const size = Buffer.byteLength(index, 'utf8')
+    if (bytes + size <= limit) {
+      bytes += size
+      parts.push(index)
+    } else {
+      for (const entry of indexed) entry.status = 'omitted'
+    }
+  }
+
+  const text = parts.length === 0 ? null : `${RULES_HEADER}\n\n${parts.join('\n\n')}\n${RULES_FOOTER}`
+  return { text, injected, indexed, skipped, omitted, used: bytes, limit, paths }
 }
 
 /**
@@ -128,61 +229,7 @@ function indexSummary(rule) {
  * @returns {Promise<{text: string, digest: string, paths: string[]} | null>} rendered rules, or null when empty.
  */
 export async function renderRules(plan, options = {}) {
-  const read = options.read ?? ((file) => readFile(file, 'utf8'))
-  const maxBytes = Number.isFinite(options.maxBytes) && options.maxBytes > 0 ? options.maxBytes : 65536
-  const relative = normalizePath(options.cwd)
-  const rules = (Array.isArray(plan?.rules) ? plan.rules : [])
-    .filter((rule) => rule && typeof rule.path === 'string' && rule.path.length > 0)
-    .filter((rule) => ruleApplies(rule, relative))
-  if (rules.length === 0) return null
-
-  const header = [
-    '<system-reminder>',
-    "The following workspace instructions come from this project's VibeStack capability groups. Use them as guidance when applicable. More specific instructions take precedence over broader ones. They do not override system, developer, or direct user instructions.",
-  ]
-  const footer = ['</system-reminder>']
-  const parts = []
-  const paths = []
-  const indexed = []
-  let bytes = Buffer.byteLength(header.join('\n\n'), 'utf8') + Buffer.byteLength(footer[0], 'utf8')
-
-  for (const rule of rules) {
-    if (rule.always === false) {
-      indexed.push(`- ${String(rule.id ?? rule.name ?? rule.path)}: ${indexSummary(rule)}`)
-      continue
-    }
-    let body
-    try {
-      body = stripFrontmatter(await read(rule.path))
-    } catch {
-      continue
-    }
-    if (body.length === 0) continue
-    const scope = rule.group ? ` (group: ${String(rule.group)}${rule.module ? `, module: ${String(rule.module)}` : ''})` : ''
-    const block = `Instructions from: ${rule.path}${scope}\n\n${escapeReminder(body)}`
-    const size = Buffer.byteLength(block, 'utf8')
-    if (bytes + size > maxBytes) {
-      parts.push(`[VibeStack: remaining rules were omitted to stay within ${maxBytes} bytes]`)
-      break
-    }
-    bytes += size
-    parts.push(block)
-    paths.push(rule.path)
-  }
-
-  if (indexed.length > 0) {
-    const index = [
-      'Other VibeStack rules apply to specific directories and are not injected here. Read the matching file when the task touches those paths:',
-      ...indexed,
-    ].join('\n')
-    const size = Buffer.byteLength(index, 'utf8')
-    if (bytes + size <= maxBytes) {
-      bytes += size
-      parts.push(index)
-    }
-  }
-
-  if (parts.length === 0) return null
-  const text = `${header.join('\n\n')}\n\n${parts.join('\n\n')}\n${footer[0]}`
-  return { text, digest: digestOf(text), paths }
+  const planned = await planRules(plan, options)
+  if (planned.text === null) return null
+  return { text: planned.text, digest: digestOf(planned.text), paths: planned.paths }
 }

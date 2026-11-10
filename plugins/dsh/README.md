@@ -64,7 +64,14 @@ dsh plugin --profile desktop remove dsh-vibestack
    当前工作区依赖的能力组的可选 Agent**（`mode` 为 `primary` / `all`；`subagent`-only
    留在名册中，不进入该菜单），并标注来源组。
    默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。选择会持久化。
-4. 输入框右下角的模型位替换为 **模型层** 选择（目录由 VibeStack 平台提供，DSH 默认把
+4. Agent 菜单右侧的 **▤** 按钮打开「会话内容预览」：按真实加载顺序列出本会话在该目录
+   实际拿到的人设、技能、命令、MCP、规则（含预算与省略数）以及仅界面可见的人设候选；
+   鼠标悬停条目右侧的预览图标 120ms 后弹出全文浮窗（等宽、可滚动、可复制路径与全文）。
+   数据来自两条只读路由 `GET /api/vibestack/inventory` 与
+   `GET /api/vibestack/inventory/text`，与注入共用同一份计划；改文件后点「刷新」即可。
+   命令行等价物是 `vibe-stack preview`。详见
+   [`docs/session-preview.md`](../../docs/session-preview.md)。
+5. 输入框右下角的模型位替换为 **模型层** 选择（目录由 VibeStack 平台提供，DSH 默认把
    四层绑定到 `deepseek-account/deepseek-flash`）；选层等价于切换会话模型路由。也可以用命令：
 
 ```text
@@ -146,6 +153,7 @@ DSH 的本机配置逐层覆盖：
 | `commands` | `ctx.commands.register()` 注册 `vibestack-<group>[-<alias>]-<name>`，handler 校验当前计划后模板渲染并 `agent.followup()` | 该 agent |
 | `mcp` | 每台服务器动态挂载 `@deepseek-ai/dsh-mcp-client` 子插件 | 该 agent |
 | `agents` | 会话投影：折叠注入消息 `source.roster` 与 `/vibestack-agent` 的 `command/run`；不写自定义事件 | 该会话 |
+| `preview` | 左下角 `▤` 弹窗 + `GET /api/vibestack/inventory[/text]`；只读同一份计划，不注入 | 该会话 |
 
 名册、命令、技能都是 **Core + 当前工作区并集**；名册包含全部 Agent（含 `mode: subagent`），
 人设菜单只展示 primary/all；Agent 行额外带 `group` / `module`，用于菜单标注。命令模板支持
@@ -237,6 +245,8 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `agents` | `true` | Agent 投影、菜单与人设段落 |
 | `mcp` | `true` | 挂载 MCP 服务器 |
 | `maxRulesBytes` | `65536` | 规则上下文上限 |
+| `inventory` | `true` | 会话内容预览：注册路由并显示 `▤` 按钮 |
+| `inventoryTextBytes` | `65536` | 单条预览正文上限 |
 | `defaultAgent` | `''` | 默认 Agent 名；空则优先 `Athena` |
 
 > `resolveMode: vibestack` 需要 CLI 输出 `schema_version == 2`。插件校验失败时失败开放
@@ -251,7 +261,7 @@ plugins/dsh/
 ├── cordis.patch.yml     # 只 insert：根级 core/UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（core / preset 两种角色）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / catalog / bindings / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 名册路由
+├── lib/                 # resolve / catalog / bindings / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 名册与清单路由
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test

@@ -42,6 +42,13 @@ from vibe_stack.project import (
     write_lock,
     write_stack,
 )
+from vibe_stack.preview import (
+    DEFAULT_RULES_BYTES,
+    DEFAULT_TEXT_BYTES,
+    SessionView,
+    build_session,
+    dumps,
+)
 from vibe_stack.repo import find_repo, write_global_config, read_global_config, default_core
 from vibe_stack.resolve import (
     MODE_PROJECT,
@@ -49,6 +56,7 @@ from vibe_stack.resolve import (
     build_plan,
     resolve_project,
 )
+from vibe_stack.rules import relative_to, rule_applies
 from vibe_stack.tools import exec_in_tool, run_tool
 
 
@@ -125,6 +133,51 @@ def build_parser() -> argparse.ArgumentParser:
     rules_show.add_argument("--json", action="store_true", help="write JSON")
     rules_show.add_argument(
         "--mode", choices=(MODE_PROJECT, MODE_VIBESTACK), default=MODE_PROJECT
+    )
+
+    preview_parser = sub.add_parser(
+        "preview", help="list the content a session would load at one path"
+    )
+    preview_parser.add_argument(
+        "--agent", default="", help="agent persona name (default: first primary agent)"
+    )
+    preview_parser.add_argument(
+        "--project",
+        dest="resolve_project",
+        type=Path,
+        default=None,
+        help="project root containing .vibestack (default: cwd)",
+    )
+    preview_parser.add_argument(
+        "--repo",
+        dest="resolve_repo",
+        type=Path,
+        default=None,
+        help="VibeStack repository root",
+    )
+    preview_parser.add_argument(
+        "--cwd", default="", help="project-relative working directory (default: root)"
+    )
+    preview_parser.add_argument(
+        "--mode", choices=(MODE_PROJECT, MODE_VIBESTACK), default=MODE_PROJECT
+    )
+    preview_parser.add_argument(
+        "--max-rules-bytes",
+        dest="max_rules_bytes",
+        type=int,
+        default=DEFAULT_RULES_BYTES,
+        help="rendered rules budget",
+    )
+    preview_parser.add_argument("--json", action="store_true", help="write JSON")
+    preview_parser.add_argument(
+        "--with-text", action="store_true", help="embed the full text of each item"
+    )
+    preview_parser.add_argument(
+        "--text-bytes",
+        dest="text_bytes",
+        type=int,
+        default=DEFAULT_TEXT_BYTES,
+        help="per-item text cap used by --with-text",
     )
 
     module_parser = sub.add_parser("module", help="enable or disable group modules")
@@ -232,6 +285,8 @@ def _dispatch(args: argparse.Namespace, repo: Path) -> int:
         return _validate(repo, project, bool(getattr(args, "json", False)))
     if args.command == "rules":
         return _rules(repo, project, args)
+    if args.command == "preview":
+        return _preview(repo, project, args)
     if args.command == "module":
         return _module_cmd(repo, project, args)
     if args.command == "resolve":
@@ -509,8 +564,8 @@ def _rules(repo: Path, project: Path, args: argparse.Namespace) -> int:
             print(f"{rule.id}  ({scope}{module} · priority {rule.priority})")
         return 0
     if args.rules_command == "show":
-        relative = _relative_to(project, Path(args.for_path))
-        matched = [rule for rule in plan.rules if _rule_applies(rule, relative, plan)]
+        relative = relative_to(project, Path(args.for_path))
+        matched = [rule for rule in plan.rules if rule_applies(rule, relative)]
         if args.json:
             payload = {
                 "mode": plan.mode,
@@ -534,51 +589,59 @@ def _rules(repo: Path, project: Path, args: argparse.Namespace) -> int:
     raise VibeStackError(f"unknown rules command: {args.rules_command}")
 
 
-def _rule_applies(rule: ResolvedRule, relative: str, plan: ResolvedPlan) -> bool:
-    """Whether *rule* should be injected for a project-relative path."""
-    if rule.scope == "global":
-        return True
-    paths = list(rule.paths)
-    if rule.scope == "module" and not paths:
-        paths = _module_paths(plan, rule.group, rule.module)
-    if not paths:
-        return True
-    return any(_match_path(relative, pattern) for pattern in paths)
+STATUS_MARKS = {
+    "injected": "+",
+    "indexed": "~",
+    "omitted": "!",
+    "skipped": "-",
+    "active": "*",
+}
 
 
-def _module_paths(plan: ResolvedPlan, group_name: str, module_path: str) -> list[str]:
-    for group in [*([plan.core] if plan.core is not None else []), *plan.groups]:
-        if group.name != group_name:
+def _preview(repo: Path, project: Path, args: argparse.Namespace) -> int:
+    view = build_session(
+        repo,
+        project,
+        agent_name=str(getattr(args, "agent", "") or "") or None,
+        cwd=str(getattr(args, "cwd", "") or "") or None,
+        mode=str(getattr(args, "mode", MODE_PROJECT)),
+        max_rules_bytes=int(getattr(args, "max_rules_bytes", DEFAULT_RULES_BYTES)),
+        with_text=bool(getattr(args, "with_text", False)),
+        text_bytes=int(getattr(args, "text_bytes", DEFAULT_TEXT_BYTES)),
+    )
+    if bool(getattr(args, "json", False)):
+        _write_json(view.to_dict())
+        return 0
+    _print_session(view)
+    return 0
+
+
+def _print_session(view: SessionView) -> None:
+    agent = view.agent
+    label = str(agent.get("label") or agent.get("group") or "")
+    layer = agent.get("model") or "-"
+    print(f"Project   {view.project}  (mode: {view.mode})")
+    print(f"Cwd       {view.cwd or '.'}")
+    print(f"Agent     {agent.get('name')}  [{label}]  model: {layer} (default: {view.model.get('default')})")
+    budget = view.budget
+    print(
+        f"Rules     {budget.get('used')}/{budget.get('limit')} bytes"
+        f" · {budget.get('omitted')} omitted"
+    )
+    for section in view.sections:
+        if not section.items:
             continue
-        for module in group.modules:
-            if module.get("path") != module_path:
-                continue
-            declared = module.get("paths")
-            if isinstance(declared, list) and declared:
-                return [str(item) for item in declared]
-            return [f"{module_path}/**"]
-    return []
-
-
-def _match_path(relative: str, pattern: str) -> bool:
-    from fnmatch import fnmatch
-
-    normalized = pattern.replace("\\", "/").rstrip("/")
-    if not normalized:
-        return True
-    if normalized.endswith("/**"):
-        prefix = normalized[: -len("/**")]
-        return relative == prefix or relative.startswith(prefix + "/")
-    return fnmatch(relative, normalized)
-
-
-def _relative_to(project: Path, path: Path) -> str:
-    base = project.resolve()
-    candidate = path if path.is_absolute() else base / path
-    try:
-        return candidate.resolve().relative_to(base).as_posix()
-    except ValueError:
-        return path.as_posix()
+        print(f"\n{section.title} ({len(section.items)})")
+        for item in section.items:
+            mark = STATUS_MARKS.get(item.status, "·")
+            detail = "/".join(part for part in (item.group, item.module) if part)
+            extra = f"  [{detail}]" if detail else ""
+            size = f"  {item.bytes}B" if item.bytes else ""
+            print(f"  {mark} {item.id}{extra}{size}  {item.summary}")
+    if view.warnings:
+        print("\nWarnings")
+        for warning in view.warnings:
+            print(f"  ! {warning}")
 
 
 def _write_json(payload: dict[str, object]) -> None:

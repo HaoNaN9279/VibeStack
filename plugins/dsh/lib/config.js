@@ -47,6 +47,10 @@ export const DEFAULT_CONFIG = Object.freeze({
   mcp: true,
   /** Upper bound for the rendered rules message. */
   maxRulesBytes: 65536,
+  /** Expose the session inventory route and the content panel button. */
+  inventory: true,
+  /** Upper bound for one inventory preview payload. */
+  inventoryTextBytes: 65536,
   /** Preferred default agent name; empty falls back to `Athena`. */
   defaultAgent: '',
 })

@@ -72,6 +72,8 @@ test('the core row provides ctx.vibestack and registers the models route', async
     assert.equal(service.apiVersion, 3)
     assert.equal(service.modelSelector, 'replace')
     assert.deepEqual(routes.map((route) => route.path).sort(), [
+      '/api/vibestack/inventory',
+      '/api/vibestack/inventory/text',
       '/api/vibestack/models',
       '/api/vibestack/roster',
     ])

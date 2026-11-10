@@ -251,6 +251,7 @@ vibe-stack activate <group>[@version]
 vibe-stack deactivate <group>
 vibe-stack sync
 vibe-stack resolve --json [--mode project|vibestack]
+vibe-stack preview [--agent <name>] [--cwd <dir>] [--json]
 vibe-stack models catalog
 vibe-stack models show --agent dsh
 vibe-stack tool list
@@ -260,6 +261,11 @@ vibe-stack tool exec <tool> -- <command>
 vibe-stack plugin list
 vibe-stack plugin status <agent>
 ```
+
+`vibe-stack preview` 按真实会话顺序列出某个目录与 Agent 实际加载的内容
+（人设、技能、命令、MCP、规则、界面可见的人设候选），并给出规则预算；DSH 输入框左下角的
+`▤` 按钮打开同一份清单，悬停预览图标可看全文。详见
+[`docs/session-preview.md`](docs/session-preview.md)。
 
 ## 版本规则
 

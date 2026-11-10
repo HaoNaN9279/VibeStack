@@ -41,6 +41,7 @@ import { createModelsRoute } from './lib/models-route.js'
 import { planUsable, unusablePlanReason } from './lib/plan.js'
 import { PlanCache } from './lib/plans.js'
 import { resolvePlan as resolveProjectPlan } from './lib/resolve.js'
+import { createInventoryRoutes } from './lib/inventory-route.js'
 import { createRosterRoute } from './lib/roster-route.js'
 import { renderRules } from './lib/rules.js'
 import { VibeStackService } from './lib/service.js'
@@ -99,6 +100,8 @@ try {
       agents: z.boolean().default(true),
       mcp: z.boolean().default(true),
       maxRulesBytes: z.number().default(65536),
+      inventory: z.boolean().default(true),
+      inventoryTextBytes: z.number().default(65536),
       defaultAgent: z.string().default(''),
     })
   }
@@ -185,6 +188,32 @@ export function applyCore(ctx, config, deps = {}) {
     return createRoster(list, pickDefaultAgent(personas, config.defaultAgent), plan.project)
   }
 
+  /**
+   * Resolve one session's plan and its project-relative working directory.
+   *
+   * The inventory panel shows exactly what the next step would load, so the
+   * working directory comes from the session itself and never from the client.
+   * @param {string} sessionId - session id from the client.
+   * @returns {Promise<{plan: object, cwd: string} | null>} plan and relative directory.
+   */
+  const sessionForInventory = async (sessionId) => {
+    const sessions = ctx.get('sessions')
+    const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined
+    if (session === undefined || session === null) return null
+    const workingDirectory = ctx.get('workingDirectory')
+    let cwd
+    try {
+      cwd = workingDirectory?.get?.(session)
+    } catch {
+      return null
+    }
+    if (typeof cwd !== 'string' || cwd.length === 0) return null
+    const result = await cache.get(cwd)
+    for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
+    if (!planUsable(result.plan)) return null
+    return { plan: result.plan, cwd: relativeTo(result.plan.project, cwd) }
+  }
+
   ctx.inject(['connection'], (scope) => {
     try {
       const registry = scope.connection?.fetch
@@ -194,6 +223,15 @@ export function applyCore(ctx, config, deps = {}) {
       }
       registry.register(createModelsRoute({ service }))
       registry.register(createRosterRoute({ rosterForSession }))
+      if (config.inventory !== false) {
+        for (const route of createInventoryRoutes({
+          sessionFor: sessionForInventory,
+          maxRulesBytes: config.maxRulesBytes,
+          textBytes: config.inventoryTextBytes,
+        })) {
+          registry.register(route)
+        }
+      }
     } catch (error) {
       logger?.warn?.('vibestack: cannot register a Fetch route: %o', error)
     }

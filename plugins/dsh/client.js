@@ -1341,6 +1341,628 @@ window.__ModuleLoader__.load({
       );
     }
 
+/** Fetch route that lists what the current session loads. */
+const INVENTORY_PATH = "/api/vibestack/inventory";
+/** Fetch route that returns one inventory entry's full text. */
+const INVENTORY_TEXT_PATH = "/api/vibestack/inventory/text";
+
+/** Status glyphs shared with `vibe-stack preview`. */
+const INVENTORY_STATUS = {
+  injected: { mark: "+", label: "已注入" },
+  indexed: { mark: "~", label: "仅索引" },
+  omitted: { mark: "!", label: "超预算" },
+  skipped: { mark: "-", label: "未加载" },
+  active: { mark: "*", label: "生效" }
+};
+
+/**
+ * Read the session inventory.
+ * @param {string} sessionId - live session id.
+ * @param {string} agent - selected persona name, or an empty string.
+ * @returns {Promise<object>} inventory payload.
+ */
+async function readInventory(sessionId, agent) {
+  const query = new URLSearchParams({ sessionId });
+  if (typeof agent === "string" && agent.length > 0) query.set("agent", agent);
+  const response = await fetch(`${INVENTORY_PATH}?${query.toString()}`, {
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.message ?? payload.code ?? `HTTP ${response.status}`);
+  }
+  return payload.inventory ?? null;
+}
+
+/**
+ * Read one inventory entry's full text.
+ * @param {string} sessionId - live session id.
+ * @param {string} kind - entry kind.
+ * @param {string} id - entry id.
+ * @returns {Promise<{text: string, truncated: boolean, path: string}>} preview payload.
+ */
+async function readInventoryText(sessionId, kind, id) {
+  const query = new URLSearchParams({ sessionId, kind, id });
+  const response = await fetch(`${INVENTORY_TEXT_PATH}?${query.toString()}`, {
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.message ?? payload.code ?? `HTTP ${response.status}`);
+  }
+  return {
+    text: typeof payload.text === "string" ? payload.text : "",
+    truncated: payload.truncated === true,
+    path: typeof payload.path === "string" ? payload.path : ""
+  };
+}
+
+/**
+ * Copy text to the clipboard, tolerating a denied clipboard permission.
+ * @param {string} text - text to copy.
+ * @returns {Promise<boolean>} whether the copy succeeded.
+ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Styles for the inventory button, dialog and hover card. */
+const inventoryStyles = {
+  button: {
+    flex: "none",
+    width: "28px",
+    height: "28px",
+    padding: "0",
+    borderRadius: "var(--dsw-radius-sm, 6px)",
+    border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
+    background: "transparent",
+    color: "inherit",
+    fontFamily: "inherit",
+    fontSize: "13px",
+    lineHeight: "1",
+    cursor: "pointer"
+  },
+  overlay: {
+    position: "fixed",
+    inset: "0",
+    zIndex: 70,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "16px",
+    background: "rgba(0,0,0,0.42)"
+  },
+  dialog: {
+    display: "flex",
+    flexDirection: "column",
+    width: "min(940px, 92vw)",
+    maxHeight: "86vh",
+    borderRadius: "12px",
+    border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
+    background: "var(--dsw-alias-bg-l1, #ffffff)",
+    boxShadow: "0 18px 48px rgba(0,0,0,0.24)",
+    overflow: "hidden"
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    padding: "12px 14px",
+    borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.18))"
+  },
+  title: { fontSize: "14px", fontWeight: 600 },
+  subtitle: { fontSize: "12px", opacity: 0.65, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  spacer: { flex: "1 1 auto" },
+  body: { flex: "1 1 auto", overflow: "auto", padding: "6px 10px 14px" },
+  section: { marginTop: "10px" },
+  sectionHead: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "100%",
+    padding: "6px 4px",
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    fontFamily: "inherit",
+    fontSize: "12px",
+    fontWeight: 600,
+    textAlign: "left",
+    cursor: "pointer"
+  },
+  count: { fontWeight: 400, opacity: 0.6 },
+  row: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "8px",
+    padding: "6px 4px",
+    borderTop: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.1))"
+  },
+  mark: { flex: "none", width: "14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12px", opacity: 0.8 },
+  rowBody: { flex: "1 1 auto", minWidth: "0" },
+  rowName: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", fontWeight: 600 },
+  rowMeta: { marginTop: "2px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "11px", opacity: 0.62, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  rowSummary: { marginTop: "2px", fontSize: "12px", opacity: 0.85, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" },
+  previewButton: {
+    flex: "none",
+    width: "24px",
+    height: "24px",
+    padding: "0",
+    borderRadius: "6px",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "inherit",
+    fontFamily: "inherit",
+    fontSize: "12px",
+    cursor: "pointer",
+    opacity: 0.7
+  },
+  muted: { padding: "14px 6px", fontSize: "12px", opacity: 0.7 },
+  error: { padding: "14px 6px", fontSize: "12px", color: "var(--dsw-alias-state-error-default, #c0392b)" },
+  card: {
+    position: "fixed",
+    zIndex: 71,
+    display: "flex",
+    flexDirection: "column",
+    width: "min(560px, 92vw)",
+    maxHeight: "70vh",
+    borderRadius: "10px",
+    border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.3))",
+    background: "var(--dsw-alias-bg-l1, #ffffff)",
+    boxShadow: "0 14px 36px rgba(0,0,0,0.22)",
+    overflow: "hidden"
+  },
+  cardHead: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 10px",
+    borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.16))"
+  },
+  cardTitle: { flex: "1 1 auto", minWidth: "0", fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  cardBody: { flex: "1 1 auto", overflow: "auto", padding: "10px 12px" },
+  pre: {
+    margin: "0",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontSize: "12px",
+    lineHeight: "1.55",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word"
+  },
+  cardFoot: {
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 10px",
+    borderTop: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.16))",
+    fontSize: "11px",
+    opacity: 0.8
+  }
+};
+
+/**
+ * Position the hover card beside an icon without leaving the viewport.
+ * @param {DOMRect} rect - preview icon rect.
+ * @returns {{left: string, top: string}} fixed offsets.
+ */
+function placeInventoryCard(rect) {
+  const margin = 10;
+  const width = Math.min(560, window.innerWidth * 0.92);
+  const height = Math.min(window.innerHeight * 0.7, 420);
+  let left = rect.right + margin;
+  if (left + width > window.innerWidth - margin) left = rect.left - width - margin;
+  if (left < margin) left = margin;
+  let top = rect.top;
+  if (top + height > window.innerHeight - margin) top = window.innerHeight - height - margin;
+  if (top < margin) top = margin;
+  return { left: `${Math.round(left)}px`, top: `${Math.round(top)}px` };
+}
+
+/**
+ * Error boundary: a broken panel must never take the composer down.
+ */
+class InventoryBoundary extends react.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn("[vibestack] inventory panel failed", error);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+/**
+ * Small button next to the Agent picker that opens the session inventory.
+ * @param {{useProjection: Function, sessionId?: string}} props - slot props.
+ * @returns {object | null} react element, or null outside the mode.
+ */
+function InventoryPanel(props) {
+  const preset = props.useProjection("agentPreset");
+  const sessionState = props.useProjection("vibestack");
+  const sessionId = typeof props.sessionId === "string" ? props.sessionId : "";
+  const [open, setOpen] = react.useState(false);
+  const [data, setData] = react.useState(null);
+  const [error, setError] = react.useState("");
+  const [loading, setLoading] = react.useState(false);
+  const [collapsed, setCollapsed] = react.useState({});
+  const [hover, setHover] = react.useState(null);
+  const [preview, setPreview] = react.useState(null);
+  const [copied, setCopied] = react.useState("");
+  const cacheRef = react.useRef(new Map());
+  const showTimer = react.useRef(null);
+  const hideTimer = react.useRef(null);
+  const dialogRef = react.useRef(null);
+  const selected = sessionState && typeof sessionState.selected === "string" ? sessionState.selected : "";
+
+  const load = react.useCallback(async () => {
+    if (sessionId.length === 0) {
+      setData(null);
+      setError("当前会话尚未就绪。");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const next = await readInventory(sessionId, selected);
+      setData(next);
+      setCollapsed({});
+    } catch (failure) {
+      setData(null);
+      setError(String(failure?.message ?? failure));
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId, selected]);
+
+  react.useEffect(() => {
+    if (!open) return undefined;
+    void load();
+    dialogRef.current?.focus?.();
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, load]);
+
+  react.useEffect(
+    () => () => {
+      clearTimeout(showTimer.current);
+      clearTimeout(hideTimer.current);
+    },
+    []
+  );
+
+  // Fetch the hovered entry once and keep it in a per-panel cache.
+  react.useEffect(() => {
+    if (hover === null) {
+      setPreview(null);
+      return undefined;
+    }
+    const entry = hover.item;
+    const key = `${entry.kind}\u0000${entry.id}`;
+    const cached = cacheRef.current.get(key);
+    if (cached !== undefined) {
+      setPreview({ loading: false, error: "", path: entry.path, truncated: false, text: cached });
+      return undefined;
+    }
+    let cancelled = false;
+    setPreview({ loading: true, error: "", path: entry.path, truncated: false, text: "" });
+    readInventoryText(sessionId, entry.kind, entry.id)
+      .then((result) => {
+        cacheRef.current.set(key, result.text);
+        if (!cancelled) setPreview({ loading: false, error: "", ...result });
+      })
+      .catch((failure) => {
+        if (!cancelled) {
+          setPreview({ loading: false, error: String(failure?.message ?? failure), path: entry.path, truncated: false, text: "" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hover, sessionId]);
+
+  if (preset !== "vibestack") return null;
+
+  const openPreview = (item, event) => {
+    clearTimeout(showTimer.current);
+    clearTimeout(hideTimer.current);
+    const rect = event.currentTarget.getBoundingClientRect();
+    showTimer.current = setTimeout(() => setHover({ item, rect }), 120);
+  };
+
+  const closePreview = () => {
+    clearTimeout(showTimer.current);
+    hideTimer.current = setTimeout(() => setHover(null), 180);
+  };
+
+  const keepPreview = () => {
+    clearTimeout(hideTimer.current);
+  };
+
+  const markCopy = (label) => {
+    setCopied(label);
+    setTimeout(() => setCopied(""), 1200);
+  };
+
+  const button = h(
+    "button",
+    {
+      type: "button",
+      style: inventoryStyles.button,
+      title: "会话内容预览：查看本会话与该工作区加载的规则、技能、命令、MCP 与人设",
+      "aria-label": "会话内容预览",
+      "aria-haspopup": "dialog",
+      "aria-expanded": open,
+      onClick: () => setOpen((value) => !value)
+    },
+    "▤"
+  );
+
+  if (!open) return button;
+
+  const sections = data && Array.isArray(data.sections) ? data.sections : [];
+
+  const modal = reactDom.createPortal(
+    h(
+      "div",
+      {
+        style: inventoryStyles.overlay,
+        onMouseDown: (event) => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }
+      },
+      h(
+        "div",
+        {
+          ref: dialogRef,
+          role: "dialog",
+          "aria-modal": "true",
+          "aria-label": "会话内容预览",
+          tabIndex: -1,
+          style: inventoryStyles.dialog,
+          onMouseDown: (event) => event.stopPropagation()
+        },
+        h(
+          "div",
+          { style: inventoryStyles.header },
+          h("span", { style: inventoryStyles.title }, "会话内容预览"),
+          h(
+            "span",
+            { style: inventoryStyles.subtitle },
+            data
+              ? `${data.agent?.name ?? "无 Agent"} · ${data.cwd === "" ? "/" : data.cwd} · ${data.project}`
+              : sessionId
+          ),
+          h("span", { style: inventoryStyles.spacer }),
+          h(
+            "button",
+            {
+              type: "button",
+              style: smallButton,
+              disabled: loading,
+              onClick: () => void load()
+            },
+            loading ? "刷新中…" : "刷新"
+          ),
+          h(
+            "button",
+            {
+              type: "button",
+              style: smallButton,
+              onClick: () => setOpen(false)
+            },
+            "关闭"
+          )
+        ),
+        h(
+          "div",
+          { style: inventoryStyles.body },
+          error.length > 0
+            ? h("div", { style: inventoryStyles.error }, error)
+            : loading && data === null
+              ? h("div", { style: inventoryStyles.muted }, "加载中…")
+              : data === null
+                ? h("div", { style: inventoryStyles.muted }, "没有可显示的内容。")
+                : sections.map((section) => {
+                    const isCollapsed =
+                      collapsed[section.kind] === undefined ? section.collapsed === true : collapsed[section.kind];
+                    return h(
+                      "div",
+                      { key: section.kind, style: inventoryStyles.section },
+                      h(
+                        "button",
+                        {
+                          type: "button",
+                          style: inventoryStyles.sectionHead,
+                          "aria-expanded": !isCollapsed,
+                          onClick: () =>
+                            setCollapsed((current) => ({
+                              ...current,
+                              [section.kind]: !isCollapsed
+                            }))
+                        },
+                        h("span", { "aria-hidden": true }, isCollapsed ? "▸" : "▾"),
+                        h("span", null, section.title ?? section.kind),
+                        h("span", { style: inventoryStyles.count }, `(${section.items.length})`)
+                      ),
+                      isCollapsed
+                        ? null
+                        : section.items.map((item) =>
+                            h(
+                              "div",
+                              { key: `${section.kind}:${item.id}`, style: inventoryStyles.row },
+                              h(
+                                "span",
+                                { style: inventoryStyles.mark, title: INVENTORY_STATUS[item.status]?.label ?? item.status },
+                                INVENTORY_STATUS[item.status]?.mark ?? "·"
+                              ),
+                              h(
+                                "div",
+                                { style: inventoryStyles.rowBody },
+                                h(
+                                  "div",
+                                  { style: inventoryStyles.rowName },
+                                  h("span", null, item.name || item.id),
+                                  item.host_name
+                                    ? h("span", { style: inventoryStyles.rowMeta }, item.host_name)
+                                    : null
+                                ),
+                                h(
+                                  "div",
+                                  { style: inventoryStyles.rowMeta },
+                                  [
+                                    item.id,
+                                    item.group ? `group: ${item.group}` : "",
+                                    item.module ? `module: ${item.module}` : "",
+                                    item.scope ? `scope: ${item.scope}` : "",
+                                    item.bytes > 0 ? `${item.bytes} B` : "",
+                                    item.status
+                                  ]
+                                    .filter((part) => part.length > 0)
+                                    .join(" · ")
+                                ),
+                                item.summary
+                                  ? h("div", { style: inventoryStyles.rowSummary }, item.summary)
+                                  : null
+                              ),
+                              h(
+                                "button",
+                                {
+                                  type: "button",
+                                  style: inventoryStyles.previewButton,
+                                  title: "悬停预览全文",
+                                  "aria-label": `预览 ${item.name || item.id}`,
+                                  onMouseEnter: (event) => openPreview(item, event),
+                                  onMouseLeave: closePreview,
+                                  onFocus: (event) => openPreview(item, event),
+                                  onBlur: closePreview
+                                },
+                                "◉"
+                              )
+                            )
+                          )
+                    );
+                  })
+        ),
+        data
+          ? h(
+              "div",
+              { style: inventoryStyles.cardFoot },
+              h("span", null, `预算 ${data.budget.used} / ${data.budget.limit} B`),
+              h("span", null, `省略 ${data.budget.omitted}`),
+              data.warnings.length > 0 ? h("span", null, `警告 ${data.warnings.length}`) : null,
+              h("span", { style: inventoryStyles.spacer }),
+              h("span", null, inlineCounts(sections))
+            )
+          : null
+      )
+    ),
+    document.body
+  );
+
+  const card =
+    hover !== null && preview !== null
+      ? reactDom.createPortal(
+          h(
+            "div",
+            {
+              style: Object.assign({}, inventoryStyles.card, placeInventoryCard(hover.rect)),
+              onMouseEnter: keepPreview,
+              onMouseLeave: closePreview
+            },
+            h(
+              "div",
+              { style: inventoryStyles.cardHead },
+              h(
+                "span",
+                { style: inventoryStyles.cardTitle },
+                `${INVENTORY_STATUS[hover.item.status]?.label ?? ""} ${hover.item.name || hover.item.id}`
+              ),
+              h(
+                "button",
+                {
+                  type: "button",
+                  style: smallButton,
+                  onClick: async () => {
+                    const ok = await copyText(hover.item.path ?? "");
+                    if (ok) markCopy("path");
+                  }
+                },
+                copied === "path" ? "已复制" : "复制路径"
+              ),
+              h(
+                "button",
+                {
+                  type: "button",
+                  style: smallButton,
+                  onClick: async () => {
+                    const ok = await copyText(preview.text ?? "");
+                    if (ok) markCopy("text");
+                  }
+                },
+                copied === "text" ? "已复制" : "复制全文"
+              )
+            ),
+            h(
+              "div",
+              { style: inventoryStyles.cardBody },
+              preview.loading
+                ? h("div", { style: inventoryStyles.muted }, "加载中…")
+                : preview.error.length > 0
+                  ? h("div", { style: inventoryStyles.error }, preview.error)
+                  : preview.text.length === 0
+                    ? h("div", { style: inventoryStyles.muted }, "该条目没有正文。")
+                    : h("pre", { style: inventoryStyles.pre }, preview.text),
+              preview.truncated ? h("div", { style: inventoryStyles.muted }, "内容过长，已截断。") : null
+            ),
+            h(
+              "div",
+              { style: inventoryStyles.cardFoot },
+              h(
+                "span",
+                { style: Object.assign({}, inventoryStyles.rowMeta, { flex: "1 1 auto" }) },
+                preview.path || hover.item.id
+              )
+            )
+          ),
+          document.body
+        )
+      : null;
+
+  return h(react.Fragment, null, button, modal, card);
+}
+
+/**
+ * One-line section counts for the dialog footer.
+ * @param {object[]} sections - inventory sections.
+ * @returns {string} text such as `规则 4 · 技能 12`.
+ */
+function inlineCounts(sections) {
+  return sections
+    .filter((section) => section.items.length > 0)
+    .map((section) => `${section.title ?? section.kind} ${section.items.length}`)
+    .join(" · ");
+}
+
+
     /**
      * Client plugin body.
      * @param {Record<string, unknown>} ctx - client context.
@@ -1375,6 +1997,19 @@ window.__ModuleLoader__.load({
             })
           },
           AgentPicker
+        )
+      );
+      // The inventory button sits next to the Agent picker. It reads the plan
+      // that the next step injects, so refreshing after an edit is honest.
+      ctx.slots.inject("conversation.input.left", () =>
+        ctx.slots.register(
+          {
+            name: "conversation.input.left",
+            id: "vibestack-inventory",
+            order: 8,
+            inject: (sessionId) => ({ sessionId })
+          },
+          (props) => h(InventoryBoundary, null, h(InventoryPanel, props))
         )
       );
       // The model-layer selector lives in the right-hand model seat, not in the
