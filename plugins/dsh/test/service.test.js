@@ -140,6 +140,31 @@ test('saving custom layers keeps explicit local overrides without copying projec
   }
 })
 
+test('saving custom layers keeps an explicit local default', async () => {
+  const { service, dir, file } = await serviceWith({
+    models: { default: 'fast', bindings: { dsh: { fast: { provider: 'local', model: 'small' } } } },
+  })
+  try {
+    const routes = Object.fromEntries(
+      CATALOG.map((layer) => [
+        layer.id,
+        { provider: 'deepseek-account', model: 'deepseek-flash' },
+      ]),
+    )
+    service.setPlatformBindings(routes, 'standard')
+    await service.reload()
+
+    const result = await saveModels(service, {
+      custom: [{ id: 'my-fast', label: '我的快速', provider: 'deepseek-account', model: 'deepseek-flash' }],
+    })
+    assert.equal(result.ok, true)
+    const saved = JSON.parse(await readFile(file, 'utf8'))
+    assert.equal(saved.models.default, 'fast')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('local bindings override project defaults one layer at a time', async () => {
   const { service, dir } = await serviceWith({
     models: { bindings: { dsh: { fast: { provider: 'local', model: 'small' } } } },

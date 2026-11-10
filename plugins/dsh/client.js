@@ -563,8 +563,12 @@ window.__ModuleLoader__.load({
         }
       };
 
-      const defaultFor = (custom, candidate) =>
-        candidate !== null && custom.some((layer) => layer.id === candidate) ? candidate : null;
+      const defaultFor = (custom, candidate) => {
+        if (candidate === null) return null;
+        // Undefined asks the service to keep the explicit local default (if
+        // any) instead of pinning the project default into the local config.
+        return custom.some((layer) => layer.id === candidate) ? candidate : undefined;
+      };
 
       const save = async () => {
         if (draft === null || !draft.custom) return;
