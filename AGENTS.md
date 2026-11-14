@@ -22,7 +22,7 @@ tests/                                     # pytest
 1. 能力组不包含 `mcp/`、`tools/`、`pyproject.toml` 或工具源码。
 2. MCP 是工具包的一种 `provider`，不单独放在能力组里。
 3. 项目部署只写 `.vibestack/`，不复制、不链接内容到 `.dsh/` 等 Agent 私有目录。
-4. Core 的加载规则按 resolve 模式区分：`project` 模式只在项目存在 `.vibestack/stack.json` 时加载；`vibestack` 模式（DSH VibeStack 会话）**无条件加载**，即使目录不是项目根。
+4. Core 的加载规则按 resolve 模式区分：`project` 模式只在项目存在 `.vibestack/stack.json` 时加载；`vibestack` 模式（DSH VibeStack 会话）**无条件加载**，即使目录不是项目根；该模式下工作区没有 `stack.json` 时，DSH 插件在首次解析时自动执行 `vibe-stack init` 创建它（可用 `autoActivate: false` 关闭）。
 5. Domain 能力组只在 `.vibestack/stack.json` 的 `groups` 中列出时加载，不默认激活。
 6. 加载顺序：Core → `groups` 数组顺序 → `extends` 依赖优先 → 组内 `depends` 拓扑 + 路径字典序。
 7. 同名 Agent / 命令 / MCP：后加载覆盖；规则和技能路径追加。只有同一个限定 id 重复（同组同模块同名同类）才报错：`resolve` 告警保留后者，`sync` / `validate` 失败。

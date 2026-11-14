@@ -29,6 +29,8 @@ export const DEFAULT_CONFIG = Object.freeze({
   timeoutMs: 5000,
   /** Resolve mode: `vibestack` keeps Core loaded in every workspace. */
   resolveMode: 'vibestack',
+  /** Create `.vibestack/stack.json` when a workspace has none (vibestack mode only). */
+  autoActivate: true,
   /** Namespace prefix for capability-group commands and skills. */
   namePrefix: 'vibestack',
   /** Maximum published command/skill name length before hashing. */

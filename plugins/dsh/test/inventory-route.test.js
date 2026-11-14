@@ -86,6 +86,60 @@ test('the list route answers a known session and rejects unknown or missing ids'
   assert.equal((await unknown.json()).code, 'missing-session')
 })
 
+test('a window without a host session passes its workspace as a hint', async () => {
+  const seen = []
+  const [list] = routes({
+    sessionFor: async (sessionId, hint) => {
+      seen.push([sessionId, hint])
+      return hint === 'D:/workspace/Game' ? { plan: fixture().plan, cwd: '' } : null
+    },
+  })
+
+  const hinted = await list.fetch(new Request(
+    `http://localhost${INVENTORY_PATH}?sessionId=blank&cwd=${encodeURIComponent('D:/workspace/Game')}`,
+  ))
+  assert.equal(hinted.status, 200)
+  assert.deepEqual(seen, [['blank', 'D:/workspace/Game']])
+
+  const unhinted = await list.fetch(new Request(`http://localhost${INVENTORY_PATH}?sessionId=blank`))
+  assert.equal(unhinted.status, 404)
+  assert.deepEqual(seen[1], ['blank', ''])
+})
+
+test('a coded session failure keeps its status, code and details', async () => {
+  const [list] = routes({
+    sessionFor: async () => {
+      const failure = new Error('this window has no session on the host yet')
+      failure.code = 'missing-session'
+      failure.status = 409
+      failure.details = { workingDirectory: false }
+      throw failure
+    },
+  })
+
+  const response = await list.fetch(new Request(`http://localhost${INVENTORY_PATH}?sessionId=blank`))
+  assert.equal(response.status, 409)
+  const payload = await response.json()
+  assert.equal(payload.ok, false)
+  assert.equal(payload.code, 'missing-session')
+  assert.match(payload.message, /no session on the host/u)
+  assert.deepEqual(payload.details, { workingDirectory: false })
+})
+
+test('an uncoded session failure becomes a 500 with its message', async () => {
+  const [list] = routes({
+    sessionFor: async () => {
+      throw new Error('boom')
+    },
+  })
+
+  const response = await list.fetch(new Request(`http://localhost${INVENTORY_PATH}?sessionId=s1`))
+  assert.equal(response.status, 500)
+  const payload = await response.json()
+  assert.equal(payload.code, 'inventory-route-failed')
+  assert.equal(payload.message, 'boom')
+})
+
 test('the text route returns one entry, truncates and rejects unknown ids', async () => {
   const [, text] = routes()
   assert.equal(text.path, INVENTORY_TEXT_PATH)

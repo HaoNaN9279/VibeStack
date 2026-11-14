@@ -1356,14 +1356,104 @@ const INVENTORY_STATUS = {
 };
 
 /**
+ * Read a slot snapshot hook without letting an absent hook break the panel.
+ *
+ * The composer slot always hands us `useSessions` and `useWorkspaces`; a plain
+ * unit test or an older host may not, so the call is defensive. The hook is
+ * called in the same order on every render of this component.
+ * @param {Function | undefined} hook - snapshot selector hook.
+ * @returns {any} the snapshot, or null.
+ */
+function useOptionalSnapshot(hook) {
+  if (typeof hook !== "function") return null;
+  try {
+    return hook((snapshot) => snapshot);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Collect the session summaries out of a sessions snapshot.
+ *
+ * The client keeps the list as `{phase, ids, byId}`; older or plain fixtures
+ * hand back an array, `.items` or `.sessions`. All three shapes are accepted.
+ * @param {any} snapshot - sessions snapshot.
+ * @returns {Array<object>} summaries.
+ */
+function sessionSummaries(snapshot) {
+  if (snapshot === null || typeof snapshot !== "object") return [];
+  if (Array.isArray(snapshot)) return snapshot;
+  const items = snapshot.items ?? snapshot.sessions;
+  if (Array.isArray(items)) return items;
+  if (Array.isArray(snapshot.ids) && snapshot.byId !== null && typeof snapshot.byId === "object") {
+    return snapshot.ids.map((id) => snapshot.byId[id]).filter((entry) => entry !== undefined);
+  }
+  const table = snapshot.byId;
+  return table !== null && typeof table === "object" ? Object.values(table) : [];
+}
+
+/**
+ * Collect the workspace records out of a workspaces snapshot.
+ *
+ * The client exposes `{phase, items, archivedSessionIds}`; each item carries
+ * `workspaceId`, `path` and `sessionIds`. Array, `.workspaces` and `.byId`
+ * fixtures are accepted too.
+ * @param {any} snapshot - workspaces snapshot.
+ * @returns {Array<object>} workspaces.
+ */
+function workspaceRecords(snapshot) {
+  if (snapshot === null || typeof snapshot !== "object") return [];
+  if (Array.isArray(snapshot)) return snapshot;
+  const items = snapshot.items ?? snapshot.workspaces;
+  if (Array.isArray(items)) return items;
+  const table = snapshot.byId;
+  return table !== null && typeof table === "object" ? Object.values(table) : [];
+}
+
+/**
+ * Pick the directory a brand-new window belongs to.
+ *
+ * A window that has not sent a prompt yet has no host session, so the server
+ * cannot know its workspace. The client does: a blank session summary carries
+ * `cwd`, and the workspace record lists the path of every workspace that owns
+ * the session. Only values the client can actually observe are used; when none
+ * exists the server keeps its own fallbacks.
+ * @param {any} sessions - sessions snapshot.
+ * @param {any} workspaces - workspaces snapshot.
+ * @param {string} sessionId - window session id.
+ * @returns {string} absolute directory, or an empty string.
+ */
+function inventoryCwdHint(sessions, workspaces, sessionId) {
+  if (typeof sessionId !== "string" || sessionId.length === 0) return "";
+  for (const entry of sessionSummaries(sessions)) {
+    if (entry === null || typeof entry !== "object") continue;
+    const id = typeof entry.sessionId === "string" ? entry.sessionId : entry.id;
+    if (id !== sessionId) continue;
+    if (typeof entry.cwd === "string" && entry.cwd.length > 0) return entry.cwd;
+    const projected = entry.projectionValues?.workingDirectory;
+    if (typeof projected === "string" && projected.length > 0) return projected;
+  }
+  const records = workspaceRecords(workspaces);
+  for (const record of records) {
+    if (record === null || typeof record !== "object") continue;
+    const owned = Array.isArray(record.sessionIds) && record.sessionIds.includes(sessionId);
+    if (owned && typeof record.path === "string" && record.path.length > 0) return record.path;
+  }
+  return "";
+}
+
+/**
  * Read the session inventory.
  * @param {string} sessionId - live session id.
  * @param {string} agent - selected persona name, or an empty string.
+ * @param {string} [hint] - workspace directory the window belongs to.
  * @returns {Promise<object>} inventory payload.
  */
-async function readInventory(sessionId, agent) {
+async function readInventory(sessionId, agent, hint) {
   const query = new URLSearchParams({ sessionId });
   if (typeof agent === "string" && agent.length > 0) query.set("agent", agent);
+  if (typeof hint === "string" && hint.length > 0) query.set("cwd", hint);
   const response = await fetch(`${INVENTORY_PATH}?${query.toString()}`, {
     credentials: "same-origin",
     cache: "no-store"
@@ -1380,10 +1470,12 @@ async function readInventory(sessionId, agent) {
  * @param {string} sessionId - live session id.
  * @param {string} kind - entry kind.
  * @param {string} id - entry id.
+ * @param {string} [hint] - workspace directory the window belongs to.
  * @returns {Promise<{text: string, truncated: boolean, path: string}>} preview payload.
  */
-async function readInventoryText(sessionId, kind, id) {
+async function readInventoryText(sessionId, kind, id, hint) {
   const query = new URLSearchParams({ sessionId, kind, id });
+  if (typeof hint === "string" && hint.length > 0) query.set("cwd", hint);
   const response = await fetch(`${INVENTORY_TEXT_PATH}?${query.toString()}`, {
     credentials: "same-origin",
     cache: "no-store"
@@ -1603,7 +1695,10 @@ class InventoryBoundary extends react.Component {
 function InventoryPanel(props) {
   const preset = props.useProjection("agentPreset");
   const sessionState = props.useProjection("vibestack");
+  const sessionsSnapshot = useOptionalSnapshot(props.useSessions);
+  const workspacesSnapshot = useOptionalSnapshot(props.useWorkspaces);
   const sessionId = typeof props.sessionId === "string" ? props.sessionId : "";
+  const cwdHint = inventoryCwdHint(sessionsSnapshot, workspacesSnapshot, sessionId);
   const [open, setOpen] = react.useState(false);
   const [data, setData] = react.useState(null);
   const [error, setError] = react.useState("");
@@ -1627,7 +1722,7 @@ function InventoryPanel(props) {
     setLoading(true);
     setError("");
     try {
-      const next = await readInventory(sessionId, selected);
+      const next = await readInventory(sessionId, selected, cwdHint);
       setData(next);
       setCollapsed({});
     } catch (failure) {
@@ -1636,7 +1731,7 @@ function InventoryPanel(props) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, selected]);
+  }, [sessionId, selected, cwdHint]);
 
   react.useEffect(() => {
     if (!open) return undefined;
@@ -1672,7 +1767,7 @@ function InventoryPanel(props) {
     }
     let cancelled = false;
     setPreview({ loading: true, error: "", path: entry.path, truncated: false, text: "" });
-    readInventoryText(sessionId, entry.kind, entry.id)
+    readInventoryText(sessionId, entry.kind, entry.id, cwdHint)
       .then((result) => {
         cacheRef.current.set(key, result.text);
         if (!cancelled) setPreview({ loading: false, error: "", ...result });
@@ -1685,7 +1780,7 @@ function InventoryPanel(props) {
     return () => {
       cancelled = true;
     };
-  }, [hover, sessionId]);
+  }, [hover, sessionId, cwdHint]);
 
   if (preset !== "vibestack") return null;
 

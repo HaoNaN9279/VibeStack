@@ -21,6 +21,7 @@ from vibe_stack.errors import VibeStackError
 from vibe_stack.loader import discover_groups, discover_tools, load_group
 from vibe_stack.model import (
     GroupMeta,
+    GroupRef,
     ModuleMeta,
     ProjectStack,
     ResolvedGroup,
@@ -49,7 +50,13 @@ from vibe_stack.preview import (
     build_session,
     dumps,
 )
-from vibe_stack.repo import find_repo, write_global_config, read_global_config, default_core
+from vibe_stack.repo import (
+    default_core,
+    find_repo,
+    global_config_path,
+    read_global_config,
+    write_global_config,
+)
 from vibe_stack.resolve import (
     MODE_PROJECT,
     MODE_VIBESTACK,
@@ -366,16 +373,33 @@ def _status(project: Path) -> int:
 def _init(repo: Path, project: Path, core_value: str) -> int:
     core = parse_ref(core_value) if core_value else default_core()
     stack = init_stack(project, core)
-    config = read_global_config()
-    config["schema_version"] = 1
-    config["repository"] = str(repo.resolve())
-    config["core"] = {"name": core.name, "version": core.version}
-    write_global_config(config)
+    _remember_repository(repo, core)
     path = stack_path(project)
     print(f"created {path}")
     if stack.groups:
         print(f"existing groups: {len(stack.groups)}")
     return 0
+
+
+def _remember_repository(repo: Path, core: GroupRef | None = None) -> None:
+    """Record the repository (and default core) in the global config.
+
+    A read-only or missing home config directory must not abort activation:
+    the project stack is already written and remains usable, so this only
+    degrades to a warning that the next run has to pass ``--repo`` again.
+    """
+    try:
+        config = read_global_config()
+        config["schema_version"] = 1
+        config["repository"] = str(repo.resolve())
+        if core is not None:
+            config["core"] = {"name": core.name, "version": core.version}
+        write_global_config(config)
+    except OSError as exc:
+        print(
+            f"warning: cannot update {global_config_path()}: {exc}",
+            file=sys.stderr,
+        )
 
 
 def _info(
@@ -429,10 +453,7 @@ def _count_skills(root: Path) -> int:
 
 
 def _activate(repo: Path, project: Path, values: list[str]) -> int:
-    config = read_global_config()
-    config["schema_version"] = 1
-    config["repository"] = str(repo.resolve())
-    write_global_config(config)
+    _remember_repository(repo)
     for value in values:
         ref = parse_ref(value)
         stack = activate(project, ref, repo)

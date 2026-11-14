@@ -98,7 +98,7 @@ def test_checked_in_agents_and_commands_use_only_platform_layers() -> None:
         for forbidden in ("provider", "temperature", "permission", "permissions", "reasoningEffort"):
             assert forbidden not in parsed.data, f"{path}: must not declare {forbidden}"
         checked += 1
-    assert checked == 23
+    assert checked == 24
 
 
 def test_checked_in_project_model_defaults_bind_all_four_layers() -> None:

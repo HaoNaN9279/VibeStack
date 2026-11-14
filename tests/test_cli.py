@@ -32,6 +32,22 @@ def test_cli_init_activate_status(
     assert lock["fingerprint"]
 
 
+def test_cli_init_survives_unwritable_global_config(
+    repo: Path, project: Path, isolated_home: Path, capsys, monkeypatch
+) -> None:
+    import vibe_stack.cli as cli
+
+    def refuse(_data: object) -> None:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(cli, "write_global_config", refuse)
+    base = ["--repo", str(repo), "--project", str(project)]
+    assert main([*base, "init", "--core", "core@0.1.0"]) == 0
+    captured = capsys.readouterr()
+    assert (project / ".vibestack" / "stack.json").is_file()
+    assert "warning: cannot update" in captured.err
+
+
 def test_cli_resolve_json(repo: Path, project: Path, capsysbinary) -> None:
     base = ["--repo", str(repo), "--project", str(project)]
     assert main([*base, "init", "--core", "core@0.1.0"]) == 0

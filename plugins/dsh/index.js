@@ -32,6 +32,7 @@ import {
   personaAgents,
   pickDefaultAgent,
 } from './lib/agents.js'
+import { activateAndResolve, stackPath } from './lib/activate.js'
 import { commandEntries, renderTemplate } from './lib/commands.js'
 import { resolveConfig } from './lib/config.js'
 import { loadCatalog } from './lib/catalog.js'
@@ -45,6 +46,7 @@ import { createInventoryRoutes } from './lib/inventory-route.js'
 import { createRosterRoute } from './lib/roster-route.js'
 import { renderRules } from './lib/rules.js'
 import { VibeStackService } from './lib/service.js'
+import { diagnoseSessionCwd, existingDirectory, resolveSessionCwd } from './lib/session-cwd.js'
 import { createSkillProvider, readSkillFile, skillCandidates } from './lib/skills.js'
 
 /** Plugin name shown in Loader diagnostics. */
@@ -91,6 +93,7 @@ try {
       command: z.string().default(''),
       timeoutMs: z.number().default(5000),
       resolveMode: z.string().default('vibestack'),
+      autoActivate: z.boolean().default(true),
       namePrefix: z.string().default('vibestack'),
       maxCommandNameLength: z.number().default(48),
       skillRank: z.number().default(250),
@@ -119,6 +122,32 @@ const PRESET_ID = 'vibestack'
 export const LAYER_COMMAND = 'vibestack-layer'
 
 /**
+ * Build the plan resolver every row uses.
+ *
+ * Switching a session to VibeStack initialises the workspace, so no manual
+ * `vibe-stack init` is needed; the first resolve of a project creates
+ * `.vibestack/stack.json` through the CLI and then reads the plan.
+ * @param {ReturnType<typeof resolveConfig>} config - resolved row config.
+ * @param {{info?: Function, warn?: Function}} [logger] - plugin logger.
+ * @returns {(cwd: string) => Promise<{plan: Record<string, unknown> | null, warnings: string[]}>} resolver for `PlanCache`.
+ */
+export function resolverFor(config, logger) {
+  return async (cwd) => {
+    const result = await activateAndResolve(cwd, config, {
+      resolvePlan: (directory) => resolveProjectPlan(directory, config),
+    })
+    if (result.activation?.created) {
+      try {
+        logger?.info?.('vibestack: initialised %s', stackPath(cwd))
+      } catch {
+        // Logging must never break the mode.
+      }
+    }
+    return result
+  }
+}
+
+/**
  * Root row: provide `ctx.vibestack` and the model-layer settings route.
  * @param {Record<string, unknown>} ctx - Cordis plugin context.
  * @param {ReturnType<typeof resolveConfig>} config - resolved row config.
@@ -134,7 +163,7 @@ export function applyCore(ctx, config, deps = {}) {
     logger,
     catalog: deps.catalog,
   })
-  const cache = new PlanCache((cwd) => resolveProjectPlan(cwd, config))
+  const cache = new PlanCache(resolverFor(config, logger))
   try {
     if (typeof ctx.provide === 'function') ctx.provide('vibestack', service)
   } catch (error) {
@@ -158,27 +187,19 @@ export function applyCore(ctx, config, deps = {}) {
   void service.catalogReady
 
   /**
-   * Resolve the persona roster for one live session without touching its log.
+   * Resolve the persona roster for one session without touching its log.
    *
    * The composer needs the roster before the first turn, but a session cannot
    * carry a surface event until the harness has written its first
    * `system/message` head. This read-only route lets the client fill that gap;
    * the authoritative publication still happens in `agent/pre-step`.
    * @param {string} sessionId - session id from the client.
+   * @param {string} [hint] - workspace directory the client reports for the window.
    * @returns {Promise<object | null>} roster payload, or null when unavailable.
    */
-  const rosterForSession = async (sessionId) => {
-    const sessions = ctx.get('sessions')
-    const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined
-    if (session === undefined || session === null) return null
-    const workingDirectory = ctx.get('workingDirectory')
-    let cwd
-    try {
-      cwd = workingDirectory?.get?.(session)
-    } catch {
-      return null
-    }
-    if (typeof cwd !== 'string' || cwd.length === 0) return null
+  const rosterForSession = async (sessionId, hint) => {
+    const cwd = await resolveSessionCwd(ctx, sessionId, hint)
+    if (cwd === null) return null
     const result = await cache.get(cwd)
     for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
     const plan = result.plan
@@ -192,26 +213,44 @@ export function applyCore(ctx, config, deps = {}) {
    * Resolve one session's plan and its project-relative working directory.
    *
    * The inventory panel shows exactly what the next step would load, so the
-   * working directory comes from the session itself and never from the client.
+   * working directory comes from the session itself whenever the host knows it.
+   * A window whose session has not been persisted yet only exists in the client,
+   * so the client may send the workspace it belongs to; that hint is used last
+   * and only when it names an existing absolute directory.
    * @param {string} sessionId - session id from the client.
-   * @returns {Promise<{plan: object, cwd: string} | null>} plan and relative directory.
+   * @param {string} [hint] - workspace directory the client reports for the window.
+   * @returns {Promise<{plan: object, cwd: string}>} plan and relative directory.
+   * @throws {Error} with `code`/`status` when no directory can be determined.
    */
-  const sessionForInventory = async (sessionId) => {
-    const sessions = ctx.get('sessions')
-    const session = typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined
-    if (session === undefined || session === null) return null
-    const workingDirectory = ctx.get('workingDirectory')
-    let cwd
-    try {
-      cwd = workingDirectory?.get?.(session)
-    } catch {
-      return null
+  const sessionForInventory = async (sessionId, hint) => {
+    const cwd = await resolveSessionCwd(ctx, sessionId, hint)
+    const candidates = []
+    for (const candidate of [cwd, existingDirectory(hint)]) {
+      if (candidate !== null && !candidates.includes(candidate)) candidates.push(candidate)
     }
-    if (typeof cwd !== 'string' || cwd.length === 0) return null
-    const result = await cache.get(cwd)
-    for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
-    if (!planUsable(result.plan)) return null
-    return { plan: result.plan, cwd: relativeTo(result.plan.project, cwd) }
+    if (candidates.length === 0) {
+      const missing = new Error(
+        'this window has no session on the host yet, so its workspace is unknown: send one message in it, or run `vibe-stack preview --project <path>` for the same view',
+      )
+      missing.code = 'missing-session'
+      missing.status = 404
+      missing.details = diagnoseSessionCwd(ctx)
+      throw missing
+    }
+    const tried = []
+    for (const directory of candidates) {
+      const result = await cache.get(directory)
+      for (const warning of result.warnings) logger?.warn?.('vibestack: %s', warning)
+      if (planUsable(result.plan)) {
+        return { plan: result.plan, cwd: relativeTo(result.plan.project, directory) }
+      }
+      tried.push(directory)
+    }
+    const unusable = new Error(`no usable VibeStack plan for ${tried.join(' or ')}`)
+    unusable.code = 'missing-plan'
+    unusable.status = 404
+    unusable.details = { cwd: tried }
+    throw unusable
   }
 
   ctx.inject(['connection'], (scope) => {
@@ -258,7 +297,7 @@ export function apply(ctx, rawConfig, deps = {}) {
     return
   }
 
-  const resolveFor = deps.resolvePlan ?? ((cwd) => resolveProjectPlan(cwd, config))
+  const resolveFor = deps.resolvePlan ?? resolverFor(config, ctx.logger)
   const cache = new PlanCache(resolveFor)
   /** Namespace options applied to every command and skill. */
   const names = {

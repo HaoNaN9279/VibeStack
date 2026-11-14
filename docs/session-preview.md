@@ -98,17 +98,22 @@ JSON 形状：
 - 悬停任意条目右侧的预览图标 120ms 后弹出全文浮窗：等宽、`pre-wrap`、可滚动，右侧优先并做边缘翻转；
   离开图标有 180ms 宽限，方便把鼠标移进浮窗。
 - 浮窗内可「复制路径」「复制全文」。
-- 工作目录取会话自身，不由客户端指定，因此面板与下一步注入不会错位。
+- 工作目录按宿主的顺序解析：活会话目录 → 会话日志记录 → 客户端上报的工作区 → 宿主工作区列表里拥有该会话的工作区 → 部署目录。
+  客户端上报的工作区只作为提示，必须是存在的绝对目录；解析出的目录没有可用计划时，还会再用提示目录试一次。
+- 新建会话窗口还没有 agent 实例、甚至没有宿主侧会话时同样可用：面板把窗口所属工作区作为提示带上，
+  服务端据此解析；都无法确定时返回可执行的提示（在新窗口发一条消息，或改用 `vibe-stack preview --project <path>`），
+  而不是只报「会话不存在」。
 
 两条只读路由（宿主 core 行注册，`cache-control: no-store`）：
 
 ```text
-GET /api/vibestack/inventory?sessionId=<id>[&agent=<name>]
-GET /api/vibestack/inventory/text?sessionId=<id>&kind=<kind>&id=<id>
+GET /api/vibestack/inventory?sessionId=<id>[&agent=<name>][&cwd=<dir>]
+GET /api/vibestack/inventory/text?sessionId=<id>&kind=<kind>&id=<id>[&cwd=<dir>]
 ```
 
 文本路由**不是文件读取器**：它在服务端计划里按 `kind` + `id` 查表，客户端无法探测任意路径；
-单条上限 `inventoryTextBytes`（默认 65536）。
+单条上限 `inventoryTextBytes`（默认 65536）。`cwd` 提示只在服务端解析不到会话目录时使用，
+且必须是存在的绝对目录，否则忽略。
 
 配置项：
 

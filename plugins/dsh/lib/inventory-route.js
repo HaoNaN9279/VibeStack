@@ -1,17 +1,18 @@
 /**
  * Read-only Fetch routes for the session inventory panel.
  *
- * GET /api/vibestack/inventory?sessionId=<id>[&agent=<name>]
+ * GET /api/vibestack/inventory?sessionId=<id>[&agent=<name>][&cwd=<dir>]
  *   -> {ok: true, inventory: {...}}
  *
- * GET /api/vibestack/inventory/text?sessionId=<id>&kind=<kind>&id=<id>
+ * GET /api/vibestack/inventory/text?sessionId=<id>&kind=<kind>&id=<id>[&cwd=<dir>]
  *   -> {ok: true, text: string, truncated: boolean, path: string}
  *
  * Both routes resolve the session's existing plan through the shared cache; they
- * never write to the session log. The working directory is the session's own, so
- * the panel cannot show a view that differs from what the next step injects. The
- * text route is not a file reader: it looks the entry up in the plan by id, so a
- * caller cannot probe arbitrary paths.
+ * never write to the session log. The working directory is the session's own: a
+ * window whose host session does not exist yet may pass the workspace it belongs
+ * to as `cwd`, and the resolver accepts it only when it names an existing
+ * absolute directory. The text route is not a file reader: it looks the entry up
+ * in the plan by id, so a caller cannot probe arbitrary paths.
  */
 
 import { buildInventory, inventoryText } from './inventory.js'
@@ -23,7 +24,7 @@ export const INVENTORY_TEXT_PATH = '/api/vibestack/inventory/text'
 
 /**
  * Build both Fetch routes.
- * @param {{sessionFor: (sessionId: string) => Promise<{plan: object, cwd: string} | null>, maxRulesBytes?: number, textBytes?: number, home?: string, read?: (file: string) => Promise<string>}} options - wiring.
+ * @param {{sessionFor: (sessionId: string, hint?: string) => Promise<{plan: object, cwd: string}>, maxRulesBytes?: number, textBytes?: number, home?: string, read?: (file: string) => Promise<string>}} options - wiring.
  * @returns {Array<{path: string, methods: string[], requestBody: 'buffered', fetch: (request: Request) => Promise<Response>}>} routes.
  */
 export function createInventoryRoutes(options) {
@@ -35,11 +36,28 @@ export function createInventoryRoutes(options) {
   const read = options.read
   const home = options.home
 
-  const withSession = async (sessionId) => {
+  const withSession = async (url) => {
+    const sessionId = url.searchParams.get('sessionId') ?? ''
     if (sessionId.length === 0) {
       return { error: json({ ok: false, code: 'missing-session', message: 'sessionId is required' }, 400) }
     }
-    const resolved = await sessionFor(sessionId)
+    const hint = url.searchParams.get('cwd') ?? ''
+    let resolved
+    try {
+      resolved = await sessionFor(sessionId, hint)
+    } catch (failure) {
+      return {
+        error: json(
+          {
+            ok: false,
+            code: typeof failure?.code === 'string' ? failure.code : 'inventory-route-failed',
+            message: String(failure?.message ?? failure),
+            ...(failure?.details === undefined ? {} : { details: failure.details }),
+          },
+          Number.isInteger(failure?.status) ? failure.status : 500,
+        ),
+      }
+    }
     if (!resolved) {
       return { error: json({ ok: false, code: 'missing-session', message: 'session not found' }, 404) }
     }
@@ -53,7 +71,7 @@ export function createInventoryRoutes(options) {
     fetch: async (request) => {
       try {
         const url = new URL(request.url)
-        const resolved = await withSession(url.searchParams.get('sessionId') ?? '')
+        const resolved = await withSession(url)
         if (resolved.error) return resolved.error
         const inventory = await buildInventory({
           plan: resolved.plan,
@@ -85,7 +103,7 @@ export function createInventoryRoutes(options) {
         if (kind.length === 0 || id.length === 0) {
           return json({ ok: false, code: 'missing-entry', message: 'kind and id are required' }, 400)
         }
-        const resolved = await withSession(url.searchParams.get('sessionId') ?? '')
+        const resolved = await withSession(url)
         if (resolved.error) return resolved.error
         const found = await inventoryText({
           plan: resolved.plan,

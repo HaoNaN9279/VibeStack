@@ -66,6 +66,7 @@ vibe-stack tool serve <tool>      # MCP stdio
 
 能力组命令与技能统一发布为 `vibestack-<group>-<name>`：
 
+- `/vibestack-core-activate`
 - `/vibestack-core-auto-git-commit`
 - `/vibestack-group-forge-group-new`
 

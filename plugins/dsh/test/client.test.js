@@ -92,6 +92,17 @@ test('the inventory panel paints with theme tokens', async () => {
   assert.match(source, /color: "var\(--dsw-alias-label-primary, inherit\)"/)
 })
 
+test('the inventory panel asks the server with the window workspace as a hint', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  // A window with no host session only exists in the client, so the panel has to
+  // report the workspace it belongs to; the server treats it as a last resort.
+  assert.match(source, /useOptionalSnapshot\(props\.useSessions\)/)
+  assert.match(source, /useOptionalSnapshot\(props\.useWorkspaces\)/)
+  assert.match(source, /readInventory\(sessionId, selected, cwdHint\)/)
+  assert.match(source, /readInventoryText\(sessionId, entry\.kind, entry\.id, cwdHint\)/)
+  assert.match(source, /query\.set\("cwd", hint\)/)
+})
+
 test('the models section stays available even before the layer route answers', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ ok: false }), { status: 500 })
   const exports = await loadClient()

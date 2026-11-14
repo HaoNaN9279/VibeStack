@@ -95,6 +95,7 @@ subagent 任务时，子会话可选的 Agent / 命令 / 技能与父会话一�
 | 能力组 | 模块 | 原名 | DSH 实际名称 |
 |---|---|---|---|
 | core | — | `auto-git-commit` | `/vibestack-core-auto-git-commit` |
+| core | — | `activate` | `/vibestack-core-activate` |
 | group-forge | — | `group-new` | `/vibestack-group-forge-group-new` |
 | unity-framework | `battle` | `battle-build` | `/vibestack-unity-framework-battle-battle-build` |
 | core | — | `caveman`（skill） | `vibestack-core-caveman` |
@@ -237,6 +238,7 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 | `command` | `''` | `vibe-stack` 可执行文件；空则按 `VIBESTACK_CLI` → `vibe-stack.exe` → `vibe-stack` 查找 |
 | `timeoutMs` | `5000` | 解析超时；`VIBESTACK_RESOLVE_TIMEOUT_MS` 优先 |
 | `resolveMode` | `vibestack` | `vibestack`：Core 常驻；`project`：退回旧行为（无 stack 不加载 Core） |
+| `autoActivate` | `true` | `vibestack` 模式下，工作区没有 `.vibestack/stack.json` 时自动执行 `vibe-stack init`；`project` 模式始终不写 |
 | `namePrefix` | `vibestack` | 命令/技能命名空间前缀；改名需自行承担冲突 |
 | `maxCommandNameLength` | `48` | 发布名超长时截断并追加短 hash |
 | `skillRank` | `250` | 能力组技能的候选 rank |
@@ -253,6 +255,10 @@ DSH 的会话读取器只接受**第一方事件类型**，未知类型必须带
 > `resolveMode: vibestack` 需要 CLI 输出 `schema_version == 2`。插件校验失败时失败开放
 > （不注入），并提示升级 `vibe-stack`；没有旧版本兼容分支。
 
+`resolveMode: vibestack` 下，工作区首次解析（新会话切到 VibeStack、名册或内容预览）时若没有
+`.vibestack/stack.json`，插件自动执行 `vibe-stack --project <工作区> init`，只创建该文件，
+不激活领域组；失败只记警告，模式仍可用。不需要这个行为就设 `autoActivate: false`。
+
 ## 结构
 
 ```text
@@ -262,7 +268,7 @@ plugins/dsh/
 ├── cordis.patch.yml     # 只 insert：根级 core/UI 行 + `preset-vibestack` 模式
 ├── index.js             # 宿主半（core / preset 两种角色）
 ├── client.js            # 浏览器半（手写 bundle，仅 require react / react-dom）
-├── lib/                 # resolve / catalog / bindings / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 名册与清单路由
+├── lib/                 # resolve / catalog / bindings / 规则 / 技能 / 命令 / 投影 / MCP / 命名 / 计划 / 名册与清单路由 / 自动初始化
 ├── scripts/             # 旧会话事件修复
 ├── skills/vibestack/    # 插件自带技能
 └── test/                # node:test
