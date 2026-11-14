@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "repository": "D:\\workspace\\VibeStack",
+  "resolved_at": "2026-11-14T06:12:28Z",
+  "core": {
+    "name": "core",
+    "version": "0.1.0",
+    "path": "D:/workspace/VibeStack/capability-groups/core/0.1.0",
+    "extends": [],
+    "tools": [
+      "tool:c1d2411db9e55d04aec18e9933599e36@v1.0.0",
+      "tool:a8a2ce51a3255a6ebb7c1705821b52f9@v1.0.0",
+      "tool:b906f036f7fb5ef0a858ffea70a735f3@v1.0.0",
+      "tool:fee311c2959c5f739e8ee01baa644dc7@v1.0.0",
+      "tool:927d3ae4489f5edc92a74fcfd3acf7ee@v0.1.6"
+    ],
+    "rules": [
+      "rules/00-global.md",
+      "rules/02-caveman-full.md"
+    ],
+    "agents": [
+      "agents/athena.md",
+      "agents/hermes.md"
+    ],
+    "commands": [
+      "commands/activate.md",
+      "commands/auto-git-commit.md"
+    ],
+    "skills": [
+      "skills/caveman",
+      "skills/git-master",
+      "skills/markitdown",
+      "skills/to-html"
+    ]
+  },
+  "groups": [
+    {
+      "name": "group-forge",
+      "version": "0.1.0",
+      "path": "D:/workspace/VibeStack/capability-groups/domain/group-forge/0.1.0",
+      "extends": [],
+      "tools": [],
+      "rules": [
+        "rules/group-authoring.md"
+      ],
+      "agents": [
+        "agents/hephaestus.md"
+      ],
+      "commands": [
+        "commands/group-new.md",
+        "commands/group-validate.md"
+      ],
+      "skills": [
+        "skills/custom-agent",
+        "skills/custom-command",
+        "skills/custom-group",
+        "skills/custom-mcp",
+        "skills/custom-module",
+        "skills/custom-rule",
+        "skills/custom-skill",
+        "skills/custom-tool"
+      ]
+    },
+    {
+      "name": "vibestack-dev",
+      "version": "",
+      "path": "D:/workspace/VibeStack/.vibestack/groups/vibestack-dev",
+      "extends": [],
+      "tools": [],
+      "rules": [
+        "rules/dev-versioning.md"
+      ],
+      "agents": [],
+      "commands": [],
+      "skills": []
+    }
+  ],
+  "fingerprint": "4452b727f09b2154d3b12b0f5710849b9586e4f4936fddc7dd6f322be39cc4fd"
+}
