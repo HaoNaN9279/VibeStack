@@ -1050,7 +1050,7 @@ window.__ModuleLoader__.load({
       borderRadius: "var(--dsw-radius-sm, 6px)",
       border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
       background: "transparent",
-      color: "inherit",
+      color: "var(--dsw-alias-label-secondary, inherit)",
       fontFamily: "inherit",
       fontSize: "12px",
       cursor: "pointer"
@@ -1423,7 +1423,7 @@ const inventoryStyles = {
     borderRadius: "var(--dsw-radius-sm, 6px)",
     border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
     background: "transparent",
-    color: "inherit",
+    color: "var(--dsw-alias-label-secondary, inherit)",
     fontFamily: "inherit",
     fontSize: "13px",
     lineHeight: "1",
@@ -1437,17 +1437,22 @@ const inventoryStyles = {
     alignItems: "center",
     justifyContent: "center",
     padding: "16px",
-    background: "rgba(0,0,0,0.42)"
+    background: "var(--dsw-alias-bg-mask-1, rgba(0,0,0,0.42))",
+    backdropFilter: "var(--dsw-mask-blur, blur(4px))",
+    WebkitBackdropFilter: "var(--dsw-mask-blur, blur(4px))"
   },
   dialog: {
     display: "flex",
     flexDirection: "column",
     width: "min(940px, 92vw)",
     maxHeight: "86vh",
-    borderRadius: "12px",
+    borderRadius: "var(--dsw-radius-lg, 12px)",
     border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.28))",
-    background: "var(--dsw-alias-bg-l1, #ffffff)",
-    boxShadow: "0 18px 48px rgba(0,0,0,0.24)",
+    background: "var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, #1f1f1f))",
+    backdropFilter: "var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%))",
+    WebkitBackdropFilter: "var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%))",
+    color: "var(--dsw-alias-label-primary, inherit)",
+    boxShadow: "var(--dsw-elevation-panel, 0 18px 48px rgba(0,0,0,0.28))",
     overflow: "hidden"
   },
   header: {
@@ -1457,8 +1462,8 @@ const inventoryStyles = {
     padding: "12px 14px",
     borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.18))"
   },
-  title: { fontSize: "14px", fontWeight: 600 },
-  subtitle: { fontSize: "12px", opacity: 0.65, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  title: { fontSize: "14px", fontWeight: 600, color: "var(--dsw-alias-label-primary, inherit)" },
+  subtitle: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary, inherit)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   spacer: { flex: "1 1 auto" },
   body: { flex: "1 1 auto", overflow: "auto", padding: "6px 10px 14px" },
   section: { marginTop: "10px" },
@@ -1470,14 +1475,14 @@ const inventoryStyles = {
     padding: "6px 4px",
     border: "none",
     background: "transparent",
-    color: "inherit",
+    color: "var(--dsw-alias-label-secondary, inherit)",
     fontFamily: "inherit",
     fontSize: "12px",
     fontWeight: 600,
     textAlign: "left",
     cursor: "pointer"
   },
-  count: { fontWeight: 400, opacity: 0.6 },
+  count: { fontWeight: 400, color: "var(--dsw-alias-label-tertiary, inherit)" },
   row: {
     display: "flex",
     alignItems: "flex-start",
@@ -1485,27 +1490,26 @@ const inventoryStyles = {
     padding: "6px 4px",
     borderTop: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.1))"
   },
-  mark: { flex: "none", width: "14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12px", opacity: 0.8 },
+  mark: { flex: "none", width: "14px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "12px", color: "var(--dsw-alias-label-tertiary, inherit)" },
   rowBody: { flex: "1 1 auto", minWidth: "0" },
-  rowName: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", fontWeight: 600 },
-  rowMeta: { marginTop: "2px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "11px", opacity: 0.62, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  rowSummary: { marginTop: "2px", fontSize: "12px", opacity: 0.85, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" },
+  rowName: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", fontWeight: 600, color: "var(--dsw-alias-label-primary, inherit)" },
+  rowMeta: { marginTop: "2px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "11px", color: "var(--dsw-alias-label-tertiary, inherit)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  rowSummary: { marginTop: "2px", fontSize: "12px", color: "var(--dsw-alias-label-secondary, inherit)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" },
   previewButton: {
     flex: "none",
     width: "24px",
     height: "24px",
     padding: "0",
-    borderRadius: "6px",
+    borderRadius: "var(--dsw-radius-sm, 6px)",
     border: "1px solid transparent",
     background: "transparent",
-    color: "inherit",
+    color: "var(--dsw-alias-label-secondary, inherit)",
     fontFamily: "inherit",
     fontSize: "12px",
-    cursor: "pointer",
-    opacity: 0.7
+    cursor: "pointer"
   },
-  muted: { padding: "14px 6px", fontSize: "12px", opacity: 0.7 },
-  error: { padding: "14px 6px", fontSize: "12px", color: "var(--dsw-alias-state-error-default, #c0392b)" },
+  muted: { padding: "14px 6px", fontSize: "12px", color: "var(--dsw-alias-label-tertiary, inherit)" },
+  error: { padding: "14px 6px", fontSize: "12px", color: "var(--dsw-alias-state-error-primary, #c0392b)" },
   card: {
     position: "fixed",
     zIndex: 71,
@@ -1513,10 +1517,13 @@ const inventoryStyles = {
     flexDirection: "column",
     width: "min(560px, 92vw)",
     maxHeight: "70vh",
-    borderRadius: "10px",
+    borderRadius: "var(--dsw-radius-lg, 10px)",
     border: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.3))",
-    background: "var(--dsw-alias-bg-l1, #ffffff)",
-    boxShadow: "0 14px 36px rgba(0,0,0,0.22)",
+    background: "var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, #1f1f1f))",
+    backdropFilter: "var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%))",
+    WebkitBackdropFilter: "var(--dsw-menu-backdrop-filter, blur(40px) saturate(150%))",
+    color: "var(--dsw-alias-label-primary, inherit)",
+    boxShadow: "var(--dsw-elevation-panel, 0 14px 36px rgba(0,0,0,0.24))",
     overflow: "hidden"
   },
   cardHead: {
@@ -1526,13 +1533,14 @@ const inventoryStyles = {
     padding: "8px 10px",
     borderBottom: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.16))"
   },
-  cardTitle: { flex: "1 1 auto", minWidth: "0", fontSize: "12px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  cardTitle: { flex: "1 1 auto", minWidth: "0", fontSize: "12px", fontWeight: 600, color: "var(--dsw-alias-label-primary, inherit)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   cardBody: { flex: "1 1 auto", overflow: "auto", padding: "10px 12px" },
   pre: {
     margin: "0",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: "12px",
     lineHeight: "1.55",
+    color: "var(--dsw-alias-label-primary, inherit)",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word"
   },
@@ -1543,7 +1551,7 @@ const inventoryStyles = {
     padding: "8px 10px",
     borderTop: "1px solid var(--dsw-alias-border-l1, rgba(127,127,127,0.16))",
     fontSize: "11px",
-    opacity: 0.8
+    color: "var(--dsw-alias-label-tertiary, inherit)"
   }
 };
 

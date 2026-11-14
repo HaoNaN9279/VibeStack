@@ -1,6 +1,7 @@
 /** Client bundle: the factory registers the picker and the inventory button. */
 
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
@@ -79,6 +80,16 @@ test('the client factory registers the picker and the inventory button', async (
   // A second mount is a no-op: one owner per bundle.
   exports.apply(ctx)
   assert.equal(slots.length, 3)
+})
+
+test('the inventory panel paints with theme tokens', async () => {
+  const source = await readFile(CLIENT, 'utf8')
+  // `--dsw-alias-bg-l1` does not exist in the host sheet, so it used to fall
+  // back to hard-coded white in the dark theme.
+  assert.equal(source.includes('--dsw-alias-bg-l1'), false)
+  assert.equal(/background:\s*"#f{3,6}"/i.test(source), false)
+  assert.match(source, /background: "var\(--dsw-specific-menu,/)
+  assert.match(source, /color: "var\(--dsw-alias-label-primary, inherit\)"/)
 })
 
 test('the models section stays available even before the layer route answers', async () => {
