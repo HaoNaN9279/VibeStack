@@ -7,14 +7,18 @@
 - `vibe-stack preview`：命令行列出内容、状态、字节数与摘要。
 - DSH 插件的 `▤` 按钮：输入框左下角、Agent 选择器旁，弹窗列出同一份清单，悬停预览图标看全文。
 
+清单不只包含 VibeStack 能力组：宿主自己注入的工作区指令（`AGENTS.md` / `CLAUDE.md` 链）也在其中，
+因为那同样是会话真实加载的内容。
+
 ## 1. 顺序即真实加载顺序
 
 段的装配顺序固定为：
 
 ```text
-persona → skills → commands → mcp → rules → rules-skipped → agents
+agents-md → persona → skills → commands → mcp → rules → rules-skipped → agents
 ```
 
+- `agents-md`：宿主的工作区指令链，会话首条消息注入，因此排在最前；不折叠。
 - `persona`：当前人设正文（system prompt 段）。
 - `skills` / `commands`：技能与命令目录。
 - `mcp`：为当前 Agent 挂载的 MCP 服务。
@@ -24,6 +28,17 @@ persona → skills → commands → mcp → rules → rules-skipped → agents
 
 `rules` 段与注入共用 `planRules`（Python 侧为 `rules.plan_rules`）这一个决策函数，字节记账、
 `always: false` 索引行、预算截断标记都与真实注入逐字节一致。改一处不会出现两套答案。
+
+### 1.1 工作区指令链
+
+与宿主一致：
+
+1. 用户级：`$DSH_HOME/AGENTS.md`，然后是 `~/.agents/AGENTS.md`。
+2. 项目级：从项目根（含 `.git` 的目录）到当前工作目录，逐层向上具体。
+3. 每层候选：`AGENTS.md`、`CLAUDE.md`，再加本地增量 `AGENTS.local.md`、`CLAUDE.local.md`。
+4. 内容 trim 后相同的文件只注入一次；后出现的重复项标为 `-`，摘要说明与谁相同。空文件不出现。
+
+宿主只在会话首条消息注入一次，所以这段不参与规则预算。
 
 ## 2. 状态符号
 

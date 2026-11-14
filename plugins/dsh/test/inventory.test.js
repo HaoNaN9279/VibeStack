@@ -5,6 +5,8 @@ import { test } from 'node:test'
 
 import { buildInventory, inventoryText, selectAgent } from '../lib/inventory.js'
 
+const HOME = '/nonexistent/home'
+
 const HEADER = `\n<system-reminder>\nThe following VibeStack rules apply to this workspace. Follow them as project instructions.\n</system-reminder>\n`
 
 /**
@@ -99,13 +101,13 @@ function files() {
 
 test('sections follow the injection order and skipped rules collapse separately', async () => {
   const inventory = await buildInventory({
-    plan: planWith(),
+    plan: planWith(), home: HOME,
     cwd: '',
     read: reader(files()),
   })
   assert.equal(inventory.schema_version, 1)
   assert.deepEqual(inventory.sections.map((section) => section.kind), [
-    'persona', 'skills', 'commands', 'mcp', 'rules', 'rules-skipped', 'agents',
+    'agents-md', 'persona', 'skills', 'commands', 'mcp', 'rules', 'rules-skipped', 'agents',
   ])
   assert.equal(inventory.sections.find((section) => section.kind === 'agents').collapsed, true)
   assert.equal(inventory.sections.find((section) => section.kind === 'rules-skipped').collapsed, true)
@@ -117,7 +119,7 @@ test('sections follow the injection order and skipped rules collapse separately'
 
 test('the rules section keeps injected, indexed and omitted in plan order', async () => {
   const inventory = await buildInventory({
-    plan: planWith(),
+    plan: planWith(), home: HOME,
     cwd: 'Assets/Battle',
     read: reader(files()),
   })
@@ -130,13 +132,13 @@ test('the rules section keeps injected, indexed and omitted in plan order', asyn
   assert.equal(inventory.sections.some((section) => section.kind === 'rules-skipped'), true)
 })
 
-test('the persona is the first section and the selected agent is marked', async () => {
-  const inventory = await buildInventory({ plan: planWith(), cwd: '', read: reader(files()) })
+test('the host instruction section leads and the persona follows it', async () => {
+  const inventory = await buildInventory({ plan: planWith(), home: HOME, cwd: '', read: reader(files()) })
   assert.equal(inventory.agent.name, 'Main')
   assert.equal(inventory.agent.model, 'strong')
   assert.equal(inventory.model.default, 'standard')
   assert.deepEqual(inventory.model.catalog, ['fast', 'standard', 'strong'])
-  const persona = inventory.sections[0]
+  const persona = inventory.sections.find((section) => section.kind === 'persona')
   assert.equal(persona.items.length, 1)
   assert.equal(persona.items[0].kind, 'persona')
   assert.equal(persona.items[0].current, true)
@@ -146,18 +148,18 @@ test('the persona is the first section and the selected agent is marked', async 
 })
 
 test('an explicit agent wins, and an unknown agent produces an empty persona', async () => {
-  const chosen = await buildInventory({ plan: planWith(), agent: 'EnemyAI', read: reader(files()) })
+  const chosen = await buildInventory({ plan: planWith(), home: HOME, agent: 'EnemyAI', read: reader(files()) })
   assert.equal(chosen.agent.name, 'EnemyAI')
   assert.equal(chosen.agent.id, 'game/battle/EnemyAI')
   assert.equal(selectAgent(planWith(), 'main').name, 'Main')
-  const missing = await buildInventory({ plan: planWith(), agent: 'nobody', read: reader(files()) })
+  const missing = await buildInventory({ plan: planWith(), home: HOME, agent: 'nobody', read: reader(files()) })
   assert.deepEqual(missing.agent, {})
-  assert.equal(missing.sections[0].items.length, 0)
+  assert.equal(missing.sections.find((section) => section.kind === 'persona').items.length, 0)
 })
 
 test('the budget reports the rendered size and marks overflow as omitted', async () => {
   const inventory = await buildInventory({
-    plan: planWith(),
+    plan: planWith(), home: HOME,
     cwd: '',
     maxRulesBytes: Buffer.byteLength(HEADER, 'utf8') + 20,
     read: reader(files()),
@@ -169,7 +171,7 @@ test('the budget reports the rendered size and marks overflow as omitted', async
 })
 
 test('skills and commands report host names and sizes', async () => {
-  const inventory = await buildInventory({ plan: planWith(), read: reader(files()) })
+  const inventory = await buildInventory({ plan: planWith(), home: HOME, read: reader(files()) })
   const skills = inventory.sections.find((section) => section.kind === 'skills')
   assert.equal(skills.items[0].host_name, 'vibestack-core-core-skill')
   assert.equal(skills.items[0].summary, '核心技能')
@@ -182,15 +184,15 @@ test('skills and commands report host names and sizes', async () => {
 test('inventoryText resolves entries from the plan by id only', async () => {
   const plan = planWith()
   const read = reader(files())
-  const rule = await inventoryText({ plan, cwd: 'Assets/Battle', kind: 'rule', id: 'game/battle/physics', read })
+  const rule = await inventoryText({ plan, home: HOME, cwd: 'Assets/Battle', kind: 'rule', id: 'game/battle/physics', read })
   assert.match(rule.text, /战斗物理规则/u)
   assert.equal(rule.path, '/repo/game/modules/battle/rules/physics.md')
-  const skill = await inventoryText({ plan, kind: 'skill', id: 'core/core-skill', read })
+  const skill = await inventoryText({ plan, home: HOME, kind: 'skill', id: 'core/core-skill', read })
   assert.match(skill.text, /技能正文/u)
-  const command = await inventoryText({ plan, kind: 'command', id: 'core/build', read })
+  const command = await inventoryText({ plan, home: HOME, kind: 'command', id: 'core/build', read })
   assert.match(command.text, /构建模板/u)
-  const persona = await inventoryText({ plan, kind: 'persona', id: 'core/Main', read })
+  const persona = await inventoryText({ plan, home: HOME, kind: 'persona', id: 'core/Main', read })
   assert.equal(persona.text, 'You are Main.')
-  const missing = await inventoryText({ plan, kind: 'rule', id: '/etc/passwd', read })
+  const missing = await inventoryText({ plan, home: HOME, kind: 'rule', id: '/etc/passwd', read })
   assert.equal(missing, null)
 })

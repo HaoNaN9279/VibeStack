@@ -55,6 +55,7 @@ function routes(options = {}) {
   }
   return createInventoryRoutes({
     sessionFor: async (sessionId) => (sessionId === 's1' ? { plan, cwd: '' } : null),
+    home: '/nonexistent/home',
     read,
     ...options,
   })
@@ -73,7 +74,7 @@ test('the list route answers a known session and rejects unknown or missing ids'
   assert.equal(payload.inventory.agent.name, 'Main')
   assert.equal(payload.inventory.cwd, '')
   assert.deepEqual(payload.inventory.sections.map((section) => section.kind), [
-    'persona', 'skills', 'commands', 'mcp', 'rules', 'agents',
+    'agents-md', 'persona', 'skills', 'commands', 'mcp', 'rules', 'agents',
   ])
 
   const missing = await list.fetch(new Request(`http://localhost${INVENTORY_PATH}`))

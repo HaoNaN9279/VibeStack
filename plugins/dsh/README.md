@@ -65,7 +65,8 @@ dsh plugin --profile desktop remove dsh-vibestack
    留在名册中，不进入该菜单），并标注来源组。
    默认选择 `Athena`；Core 始终可用，所以 VibeStack 会话里菜单总会出现。选择会持久化。
 4. Agent 菜单右侧的 **▤** 按钮打开「会话内容预览」：按真实加载顺序列出本会话在该目录
-   实际拿到的人设、技能、命令、MCP、规则（含预算与省略数）以及仅界面可见的人设候选；
+   实际拿到的内容——先是宿主自己的工作区指令链（`AGENTS.md` / `CLAUDE.md`，含重复项为何被跳过），
+   然后是人设、技能、命令、MCP、规则（含预算与省略数）以及仅界面可见的人设候选；
    鼠标悬停条目右侧的预览图标 120ms 后弹出全文浮窗（等宽、可滚动、可复制路径与全文）。
    数据来自两条只读路由 `GET /api/vibestack/inventory` 与
    `GET /api/vibestack/inventory/text`，与注入共用同一份计划；改文件后点「刷新」即可。

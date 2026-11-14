@@ -14,11 +14,13 @@
 
 import { readFile } from 'node:fs/promises'
 
+import { INSTRUCTION_SECTION_TITLE, hostInstructions } from './instructions.js'
 import { normalizePath, planRules, stripFrontmatter } from './rules.js'
 
 export const INVENTORY_SCHEMA_VERSION = 1
 const SUMMARY_LIMIT = 200
 const SECTION_TITLES = {
+  'agents-md': INSTRUCTION_SECTION_TITLE,
   persona: 'Agent persona',
   skills: 'Skills',
   commands: 'Commands',
@@ -151,7 +153,7 @@ async function bodyOf(read, file) {
 
 /**
  * Compute the session inventory.
- * @param {{plan: Record<string, any>, cwd?: string, agent?: string, maxRulesBytes?: number, textBytes?: number, read?: (file: string) => Promise<string>}} input - plan, working directory and options.
+ * @param {{plan: Record<string, any>, cwd?: string, agent?: string, maxRulesBytes?: number, textBytes?: number, home?: string, read?: (file: string) => Promise<string>}} input - plan, working directory and options.
  * @returns {Promise<Record<string, any>>} inventory payload.
  */
 export async function buildInventory(input) {
@@ -160,6 +162,12 @@ export async function buildInventory(input) {
   const cwd = normalizePath(input?.cwd)
   const selected = selectAgent(plan, input?.agent)
   const rules = await planRules(plan, { cwd, maxBytes: input?.maxRulesBytes, read })
+  const instructions = await hostInstructions({
+    project: String(plan.project ?? '.'),
+    cwd,
+    home: input?.home,
+    read,
+  })
 
   const persona = selected === null ? [] : [item({
     kind: 'persona',
@@ -273,6 +281,7 @@ export async function buildInventory(input) {
   }))
 
   const sections = [
+    { kind: 'agents-md', title: SECTION_TITLES['agents-md'], collapsed: false, items: instructions },
     { kind: 'persona', title: SECTION_TITLES.persona, collapsed: false, items: persona },
     { kind: 'skills', title: SECTION_TITLES.skills, collapsed: false, items: skills },
     { kind: 'commands', title: SECTION_TITLES.commands, collapsed: false, items: commands },
@@ -311,7 +320,7 @@ export async function buildInventory(input) {
 
 /**
  * Resolve one inventory entry to its full text for the hover preview.
- * @param {{plan: Record<string, any>, cwd?: string, kind?: string, id?: string, read?: (file: string) => Promise<string>}} input - plan, directory and entry identity.
+ * @param {{plan: Record<string, any>, cwd?: string, kind?: string, id?: string, home?: string, read?: (file: string) => Promise<string>}} input - plan, directory and entry identity.
  * @returns {Promise<{text: string, path: string} | null>} full text, or null when unknown.
  */
 export async function inventoryText(input) {
@@ -319,6 +328,19 @@ export async function inventoryText(input) {
   const read = input?.read ?? ((file) => readFile(file, 'utf8'))
   const kind = String(input?.kind ?? '')
   const id = String(input?.id ?? '')
+
+  if (kind === 'agents-md') {
+    // Only the chain the host would load is addressable, never an arbitrary path.
+    const entries = await hostInstructions({
+      project: String(plan.project ?? '.'),
+      cwd: input?.cwd,
+      home: input?.home,
+      read,
+      withText: true,
+    })
+    const match = entries.find((entry) => String(entry.id) === id)
+    return match ? { text: String(match.text ?? ''), path: String(match.path ?? '') } : null
+  }
 
   if (kind === 'rule') {
     const rules = await planRules(plan, { cwd: input?.cwd, read })

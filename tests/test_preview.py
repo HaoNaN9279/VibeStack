@@ -24,6 +24,16 @@ def _json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the host instruction chain inside the test tree."""
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("DSH_HOME", str(home / ".dsh"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    return home
+
+
 @pytest.fixture
 def game(tmp_path: Path) -> tuple[Path, Path]:
     """A repository + project with one module so scope filtering is exercised."""
@@ -99,6 +109,7 @@ def game(tmp_path: Path) -> tuple[Path, Path]:
     )
 
     project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True, exist_ok=True)
     _json(
         project / ".vibestack/stack.json",
         {
@@ -115,6 +126,7 @@ def test_sections_follow_the_session_order(game: tuple[Path, Path]) -> None:
     repo, project = game
     view = build_session(repo, project)
     assert [section.kind for section in view.sections] == [
+        "agents-md",
         "persona",
         "skills",
         "commands",
@@ -123,7 +135,7 @@ def test_sections_follow_the_session_order(game: tuple[Path, Path]) -> None:
         "rules-skipped",
         "agents",
     ]
-    persona = view.sections[0].items[0]
+    persona = next(section for section in view.sections if section.kind == "persona").items[0]
     assert persona.id == "core/Main"
     assert persona.current is True
     assert view.agent["name"] == "Main"
@@ -209,9 +221,9 @@ def test_with_text_embeds_content(game: tuple[Path, Path]) -> None:
     rules = next(section for section in view.sections if section.kind == "rules")
     first = rules.items[0]
     assert "Always applies." in (first.text or "")
-    skill = view.sections[1].items[0]
+    skill = next(section for section in view.sections if section.kind == "skills").items[0]
     assert "Steps." in (skill.text or "")
-    command = view.sections[2].items[0]
+    command = next(section for section in view.sections if section.kind == "commands").items[0]
     assert "Build {{target}}" in (command.text or "")
 
 
@@ -264,7 +276,8 @@ def test_cli_preview_json(game: tuple[Path, Path], capsysbinary) -> None:
     assert data["schema_version"] == 1
     assert data["cwd"] == "Assets/Battle"
     assert data["agent"]["name"] == "Main"
-    assert [section["kind"] for section in data["sections"]][:5] == [
+    assert [section["kind"] for section in data["sections"]][:6] == [
+        "agents-md",
         "persona",
         "skills",
         "commands",
@@ -330,3 +343,64 @@ def read_body_text(text: str) -> str:
     from vibe_stack.rules import strip_frontmatter
 
     return strip_frontmatter(text)
+
+
+def test_host_instructions_run_global_then_project_broad_to_specific(
+    game: tuple[Path, Path], isolated_home: Path
+) -> None:
+    """The host injects its own AGENTS.md chain before any VibeStack rule."""
+    repo, project = game
+    _write(isolated_home / ".dsh/AGENTS.md", "# Global DSH\n\nglobal.\n")
+    _write(isolated_home / ".agents/AGENTS.md", "# Global agents\n\nagents.\n")
+    _write(project / "AGENTS.md", "# Root rules\n\nroot.\n")
+    _write(project / "CLAUDE.md", "# Root claude\n\nclaude.\n")
+    _write(project / "Assets/AGENTS.md", "# Assets rules\n\nassets.\n")
+    _write(project / "Assets/Battle/AGENTS.local.md", "# Battle local\n\nlocal.\n")
+
+    view = build_session(repo, project, cwd="Assets/Battle")
+    chain = view.sections[0]
+    assert chain.kind == "agents-md"
+    assert chain.collapsed is False
+    assert [item.name for item in chain.items] == [
+        "~/.dsh/AGENTS.md",
+        "~/.agents/AGENTS.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "Assets/AGENTS.md",
+        "Assets/Battle/AGENTS.local.md",
+    ]
+    assert [item.scope for item in chain.items] == [
+        "global",
+        "global",
+        "global",
+        "global",
+        "paths",
+        "paths",
+    ]
+    assert all(item.kind == "agents-md" and item.group == "host" for item in chain.items)
+    assert all(item.status == "injected" for item in chain.items)
+    assert chain.items[0].summary == "Global DSH"
+
+
+def test_host_instructions_skip_repeated_content(game: tuple[Path, Path]) -> None:
+    repo, project = game
+    _write(project / "AGENTS.md", "# Duplicate\n\nsame body.\n")
+    _write(project / "Assets/CLAUDE.md", "\n# Duplicate\n\nsame body.\n\n")
+
+    chain = build_session(repo, project, cwd="Assets").sections[0]
+    assert [item.status for item in chain.items] == ["injected", "skipped"]
+    assert "AGENTS.md" in chain.items[1].description
+
+
+def test_host_instructions_ignore_blank_files(game: tuple[Path, Path]) -> None:
+    repo, project = game
+    _write(project / "AGENTS.md", "   \n\n")
+    assert build_session(repo, project).sections[0].items == []
+
+
+def test_host_instructions_embed_text_when_requested(game: tuple[Path, Path]) -> None:
+    repo, project = game
+    _write(project / "AGENTS.md", "# Root\n\nbody.\n")
+    chain = build_session(repo, project, with_text=True, text_bytes=4).sections[0]
+    assert chain.items[0].text == "# Ro"
+    assert chain.items[0].truncated is True

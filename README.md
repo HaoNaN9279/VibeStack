@@ -263,8 +263,8 @@ vibe-stack plugin status <agent>
 ```
 
 `vibe-stack preview` 按真实会话顺序列出某个目录与 Agent 实际加载的内容
-（人设、技能、命令、MCP、规则、界面可见的人设候选），并给出规则预算；DSH 输入框左下角的
-`▤` 按钮打开同一份清单，悬停预览图标可看全文。详见
+（宿主工作区指令、人设、技能、命令、MCP、规则、界面可见的人设候选），并给出规则预算；
+DSH 输入框左下角的 `▤` 按钮打开同一份清单，悬停预览图标可看全文。详见
 [`docs/session-preview.md`](docs/session-preview.md)。
 
 ## 版本规则

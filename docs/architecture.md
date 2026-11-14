@@ -406,7 +406,7 @@ provider / model / reasoningEffort 与凭据留在项目模型文件或本机。
 | `validate [--json]` | 严格解析，不写文件，失败退出码 1 |
 | `resolve --json` | 生成只读注入计划，供插件消费 |
 | `rules list/show` | 列出规则；`show --for <path>` 看某路径生效的规则 |
-| `preview` | 按会话顺序列出某目录与 Agent 实际加载的内容及摘要 |
+| `preview` | 按会话顺序列出某目录与 Agent 实际加载的内容及摘要（含宿主 `AGENTS.md` 链） |
 | `module list/enable/disable` | 查看、启用、停用模块（写回 stack.json） |
 | `models catalog/show/bind/unbind/default/migrate` | 模型层目录、项目默认与本机覆盖管理 |
 | `tool list/run/serve/exec` | 工具入口 |

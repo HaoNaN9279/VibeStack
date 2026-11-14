@@ -1,15 +1,17 @@
-"""Simulate the content one VibeStack session loads.
+"""Simulate the content one session loads.
 
-The view is a pure computation over a resolved plan: it never reads a session
-log, never runs hooks and never writes anything. Section order and item order
-mirror the plugin's assembly order, so the CLI and the DSH panel show the same
-sequence the model would receive:
+The view is a pure computation over a resolved plan plus the host instruction
+chain: it never reads a session log, never runs hooks and never writes anything.
+Section order and item order mirror the assembly order, so the CLI and the DSH
+panel show the same sequence the model would receive:
 
-1. persona - the agent system prompt section
-2. skills - the skill catalog built at turn start
-3. commands - the command registry synced in `agent/pre-step`
-4. mcp - mounted MCP servers
-5. rules - the workspace-instructions message appended last
+1. agents-md - the host workspace-instruction baseline (user-global and project
+   `AGENTS.md` / `CLAUDE.md` files), injected on the first request
+2. persona - the agent system prompt section
+3. skills - the skill catalog built at turn start
+4. commands - the command registry synced in `agent/pre-step`
+5. mcp - mounted MCP servers
+6. rules - the VibeStack workspace-instructions message appended last
 
 Inside the rules section the items are ordered exactly like the rendered
 message: injected bodies first, then index-only lines, then the rules dropped
@@ -20,6 +22,7 @@ loaded at all and travel in a separate trailing section.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,7 +46,15 @@ from vibe_stack.rules import (
 SUMMARY_LIMIT = 200
 DEFAULT_TEXT_BYTES = 65536
 
+#: Candidate file names the host loads in every directory, broad to specific.
+BASE_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
+#: Additive local overlays loaded after the base candidates.
+LOCAL_INSTRUCTION_FILES = ("AGENTS.local.md", "CLAUDE.local.md")
+#: Directory name that marks the host project root.
+PROJECT_ROOT_MARKER = ".git"
+
 SECTION_TITLES = {
+    "agents-md": "工作区指令（AGENTS.md / CLAUDE.md）",
     "persona": "Agent 人设",
     "skills": "技能",
     "commands": "命令",
@@ -158,6 +169,7 @@ def build_session(
     max_rules_bytes: int = DEFAULT_RULES_BYTES,
     with_text: bool = False,
     text_bytes: int = DEFAULT_TEXT_BYTES,
+    home: Path | None = None,
 ) -> SessionView:
     """Compute the content a session at *cwd* would load for *agent_name*."""
     plan = resolve_project(repo, project, mode=mode)
@@ -170,6 +182,16 @@ def build_session(
         plan, relative, limit, with_text, text_limit
     )
     sections = [
+        SessionSection(
+            "agents-md",
+            host_instruction_items(
+                plan.project,
+                relative,
+                home=home,
+                with_text=with_text,
+                text_limit=text_limit,
+            ),
+        ),
         SessionSection("persona", [_persona_item(agent, with_text, text_limit)]),
         SessionSection("skills", _skill_items(plan, with_text, text_limit)),
         SessionSection("commands", _command_items(plan, with_text, text_limit)),
@@ -204,6 +226,117 @@ def _normalize_cwd(project: Path, cwd: str | None) -> str:
     if candidate.is_absolute():
         return normalize_path(relative_to(project, candidate))
     return normalize_path(cwd)
+
+
+def host_instruction_items(
+    project: Path | str,
+    cwd: str = "",
+    *,
+    home: Path | None = None,
+    with_text: bool = False,
+    text_limit: int = DEFAULT_TEXT_BYTES,
+) -> list[SessionItem]:
+    """List the host workspace-instruction chain for *cwd*.
+
+    The host injects one baseline message per session: the user-global
+    ``AGENTS.md`` files first, then every candidate from the project root down
+    to the working directory, broad to specific. Identical content is rendered
+    once, so later duplicates are reported as skipped instead of injected.
+    """
+    root = Path(project).resolve()
+    if home is not None:
+        home_dir = Path(home).resolve()
+        dsh_home = home_dir / ".dsh"
+    else:
+        home_dir = Path.home()
+        dsh_home = Path(os.environ.get("DSH_HOME") or (home_dir / ".dsh"))
+    entries: list[tuple[Path, str, str]] = []
+
+    for base in (dsh_home, home_dir / ".agents"):
+        entries.append((base / "AGENTS.md", _home_label(base / "AGENTS.md", home_dir), "global"))
+
+    target = root / cwd if cwd else root
+    host_root = _host_root(root)
+    for directory in _project_chain(root, target):
+        label_dir = _safe_relative(directory, host_root)
+        scope = "global" if directory == host_root else "paths"
+        prefix = "" if label_dir == "." else f"{label_dir}/"
+        for name in (*BASE_INSTRUCTION_FILES, *LOCAL_INSTRUCTION_FILES):
+            entries.append((directory / name, f"{prefix}{name}", scope))
+
+    items: list[SessionItem] = []
+    seen: dict[str, str] = {}
+    for path, label, scope in entries:
+        if not path.is_file():
+            continue
+        body = read_body(str(path))
+        if body is None or body.strip() == "":
+            continue
+        key = body.strip()
+        duplicate_of = seen.get(key)
+        if duplicate_of is None:
+            seen[key] = label
+            status = "injected"
+            description = "随会话首条消息注入"
+        else:
+            status = "skipped"
+            description = f"内容与 {duplicate_of} 相同，宿主不会重复注入"
+        text, truncated = (
+            _clip(body, text_limit) if with_text else (None, False)
+        )
+        items.append(
+            SessionItem(
+                kind="agents-md",
+                id=path.as_posix(),
+                name=label,
+                group="host",
+                scope=scope,
+                status=status,
+                bytes=_size(body),
+                path=str(path),
+                description=description,
+                summary=_summary(body, label),
+                text=text,
+                truncated=truncated,
+            )
+        )
+    return items
+
+
+def _project_chain(root: Path, target: Path) -> list[Path]:
+    """Every directory from the host root down to *target*, broad to specific."""
+    host_root = _host_root(root)
+    if not target.resolve().is_relative_to(host_root.resolve()):
+        return [root]
+    inside = target.resolve().relative_to(host_root.resolve())
+    directories = [host_root]
+    current = host_root
+    for part in inside.parts:
+        current = current / part
+        directories.append(current)
+    return directories
+
+
+def _host_root(project: Path) -> Path:
+    for candidate in (project, *project.parents):
+        if (candidate / PROJECT_ROOT_MARKER).exists():
+            return candidate
+    return project
+
+
+def _safe_relative(path: Path, base: Path) -> str:
+    """Posix path of *path* under *base*, or ``.`` when it is not inside."""
+    try:
+        return path.resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return "."
+
+
+def _home_label(path: Path, home: Path) -> str:
+    try:
+        return f"~/{path.resolve().relative_to(home).as_posix()}"
+    except ValueError:
+        return path.as_posix()
 
 
 def _select_agent(plan: ResolvedPlan, agent_name: str | None) -> ResolvedAgent:

@@ -23,7 +23,7 @@ export const INVENTORY_TEXT_PATH = '/api/vibestack/inventory/text'
 
 /**
  * Build both Fetch routes.
- * @param {{sessionFor: (sessionId: string) => Promise<{plan: object, cwd: string} | null>, maxRulesBytes?: number, textBytes?: number, read?: (file: string) => Promise<string>}} options - wiring.
+ * @param {{sessionFor: (sessionId: string) => Promise<{plan: object, cwd: string} | null>, maxRulesBytes?: number, textBytes?: number, home?: string, read?: (file: string) => Promise<string>}} options - wiring.
  * @returns {Array<{path: string, methods: string[], requestBody: 'buffered', fetch: (request: Request) => Promise<Response>}>} routes.
  */
 export function createInventoryRoutes(options) {
@@ -33,6 +33,7 @@ export function createInventoryRoutes(options) {
     ? options.textBytes
     : 65536
   const read = options.read
+  const home = options.home
 
   const withSession = async (sessionId) => {
     if (sessionId.length === 0) {
@@ -59,6 +60,7 @@ export function createInventoryRoutes(options) {
           cwd: resolved.cwd,
           agent: url.searchParams.get('agent') ?? '',
           maxRulesBytes,
+          home,
           read,
         })
         return json({ ok: true, inventory })
@@ -90,6 +92,7 @@ export function createInventoryRoutes(options) {
           cwd: resolved.cwd,
           kind,
           id,
+          home,
           read,
         })
         if (!found) {
