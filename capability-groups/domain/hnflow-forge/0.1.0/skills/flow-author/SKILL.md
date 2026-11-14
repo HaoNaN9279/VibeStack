@@ -1,6 +1,6 @@
 ---
 name: flow-author
-description: 当边界已定、需要写出可校验的 HNFlow 流程定义（schemaVersion 2）时使用：六节点选型、三套可运行骨架、契约写法、模板变量、静态校验错误码修法，以及 create/draft 动作序列。
+description: 当边界已定、需要写出可校验的 HNFlow 流程定义（schemaVersion 2）时使用：节点选型（内置六种 + 宿主注册的额外 kind）、三套可运行骨架、契约写法、模板变量、静态校验错误码修法，以及 create/draft 动作序列。
 ---
 
 # 流程定义编写（Author）
@@ -165,6 +165,8 @@ description: 当边界已定、需要写出可校验的 HNFlow 流程定义（sc
 
 ## 节点字段
 
+下表是**内置六种**。宿主插件可通过 `registerNodeKind` 注册额外 kind（`hnflow_author schema` 的 `notes.nodeTypes` 列出当前全部）；额外 kind 必须有 `output` 契约，执行只允许插件确定性逻辑或子 Agent，不能是用户脚本。不确定就不写。
+
 | 类型 | 必填 | 可选 |
 | --- | --- | --- |
 | `agent` | `id`、`preset`、`instruction`、`output` | `input`、`model`、`budget{maxAttempts,timeoutMs}`、`allowHuman`、`onReject` |
@@ -209,15 +211,16 @@ description: 当边界已定、需要写出可校验的 HNFlow 流程定义（sc
 ## 动作序列
 
 ```text
-hnflow_author schema                         # 需要时回看格式
+hnflow_author schema                         # 需要时回看格式（notes.nodeTypes = 当前可用节点类型）
 hnflow_author validate { definition }        # 必做；有错先修
 hnflow_author create { definition, name, scope?: project|library, folder?, alias? }
 hnflow_author draft { flow, definition }     # 改已有流程（项目草稿或库流程的工作区覆盖）
 hnflow_author promote / rename / delete      # 仅项目草稿
 hnflow run { flow, input }                   # 启动一次，立即返回 runId，不轮询
+hnflow status / list_runs / inbox / triggers # 观察：健康、待决项、触发器与解析错误
 ```
 
-作用域：默认项目草稿（只本工作区可见、可运行、无 revision）；`scope: "library"` 建库资产 r1 并默认引用到本工作区。**已有库资产的发布/回滚是人的动作**（`/hnflow publish` 或页面），工具没有入口。
+作用域：默认项目草稿（只本工作区可见、可运行、无 revision）；`scope: "library"` 建库资产 r1 并默认引用到本工作区。**已有库资产的发布/回滚是人的动作**（`/hnflow publish` 或页面），工具没有入口。**触发器的创建/修改也是人的动作**：`hnflow triggers` 只读，触发器写在项目 `.hnflow/triggers.json`。
 
 ## 错误码 → 修法
 
@@ -225,7 +228,7 @@ hnflow run { flow, input }                   # 启动一次，立即返回 runId
 | --- | --- |
 | `definition-invalid` | 对照必填字段表补全；注意非 agent/judge 不能写 preset |
 | `node-id-invalid` | id 不匹配正则或重复 |
-| `node-type-invalid` | 只允许六种类型 |
+| `node-type-invalid` | 类型不在宿主注册表：用内置六种，或先用 `hnflow_author schema` 确认插件已注册该 kind |
 | `contract-unsatisfiable` | 上游 output 缺下游 required 字段：补 output 或用 `merge` 组装 |
 | `input-unbound` | required 字段无来源：加进 `flow.input.properties` 或让上游产出 |
 | `gate-branches-incomplete` | 给 gate 补齐 approved / rejected / modified 三条出边 |

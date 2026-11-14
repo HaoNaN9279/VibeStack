@@ -24,7 +24,7 @@ name: hnflow-forge
 
 ## HNFlow 硬约束
 
-- 六节点：`agent` / `judge` / `merge` / `gate` / `request` / `verify`。
+- 内置六节点：`agent` / `judge` / `merge` / `gate` / `request` / `verify`；宿主插件用 `registerNodeKind` 注册的额外 kind 也算合法，以 `hnflow_author schema` 返回的 `nodeTypes` 为准，**不要编造**（未注册报 `node-type-invalid`）。
 - 单起点 + 单终点；禁止环——驳回重做走 `onReject`，或另设节点继续向前。
 - `gate` 有出边时 `approved` / `rejected` / `modified` 三分支必须齐全。
 - `judge`（含 `verify.judge`）的 preset 不能与任一祖先 `agent` 的 preset 相同。
@@ -32,9 +32,15 @@ name: hnflow-forge
 - `preset` 必须在宿主 allowlist（默认 `hnflow`、`standard`）；`model` 只写 VibeStack 平台模型层 id（`fast` / `standard` / `strong` / `vision`）。
 - 节点不能内联工具或 persona；流程不表达权限。
 
+## 自动化边界
+
+- “什么时候自动跑”不是流程内容：写在项目 `.hnflow/triggers.json`（`cron` / `file` / `run-completed`），由人维护；Agent 没有创建触发器的工具动作。
+- 触发器只**新开** run：不接管授权、不跳 `gate` / `request`、不续跑旧 run；`run-completed` 链式触发最多 5 层。
+- 自动化要生效，插件 `hnflow-pass` 行必须启用（默认 2 秒一次）；它同时负责过期推进、副作用重放与停滞续推。
+
 ## 人类专属
 
-`publish`、`rollback`、门禁裁决、人工交付、旧格式 `import` 都没有工具入口。绝不声称自己完成了这些动作。
+`publish`、`rollback`、门禁裁决、人工交付、旧格式 `import`、创建/修改触发器都没有工具入口。绝不声称自己完成了这些动作。
 
 ## 绝不
 
@@ -48,6 +54,7 @@ name: hnflow-forge
 1. 项目草稿（默认）：`hnflow_author create`，`scope` 省略。
 2. 通用资产：`create` + `scope: "library"`，得到新资产 r1。
 3. 无 hnflow 工具（VibeStack 模式）：产出定义文件，明确告知用户切 HNFlow 模式，或由人执行 `/hnflow import <名称> <文件>`。
+4. 交付说明里写清触发方式：手动 `hnflow run`，或由人把 `.hnflow/triggers.json` 写好后依赖 `hnflow-pass` 行。
 
 ## 模式依赖
 

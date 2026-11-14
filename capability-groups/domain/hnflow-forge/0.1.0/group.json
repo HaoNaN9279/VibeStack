@@ -2,7 +2,7 @@
   "guid": "a106305dea8e435c88dd1363354869e6",
   "name": "hnflow-forge",
   "version": "0.1.0",
-  "description": "HNFlow 约束式工作流制作：需求分析、能力组与工作流边界拆分、编排设计、定义校验，以及配套 VibeStack 能力组的生成。",
+  "description": "HNFlow 约束式工作流制作：需求分析、能力组与工作流边界拆分、编排设计、定义校验，以及配套 VibeStack 能力组的生成；覆盖 v0.8 的自动化触发与运行治理。",
   "permissions": [
     "fs",
     "exec"

@@ -48,9 +48,11 @@ hnflow_author validate { definition }
 - 流程 `description` 里的 `requires:<group>` 是否都已激活；缺失标“运行前提不满足”。
 - 节点 `preset` 是否在宿主 allowlist；`model` 层是否在本机存在（不确定就问用户，别猜）。
 
-## 5 运行现状（可选，只读）
+## 5 运行与自动化现状（可选，只读）
 
-`hnflow list_runs` / `status { run_id }` / `inbox`：看 `needs_human`、降级标记、过期待决项、token 用量异常。
+`hnflow list_runs` / `status { run_id }` / `inbox`：看 `health`（卡在等人、等模型、宿主不可用、超预算、停滞）、降级标记、过期待决项、token 用量异常。
+
+`hnflow triggers`：触发器解析错误、`lastFiredAt` 是否前进、`run-completed` 链是否过深。触发器文件是 `<workspace>/.hnflow/triggers.json`，**只读不改**；要人自己改。
 
 ## 输出
 
@@ -59,7 +61,7 @@ hnflow_author validate { definition }
 静态预检：lint ok=true|false（工具: 可用 / 不可用-未校验）；宿主 validate：通过 / 未跑
 阻塞项（必改）：[错误码] 位置 → 问题 → 修法
 建议项：位置 → 建议
-依赖与前提：已满足 / 缺失（缺什么，怎么补）
+依赖与前提：已满足 / 缺失（缺什么，怎么补）；自动化：手动 / 已配置（错误 N 条）
 下一步：改定义 `hnflow_author draft`（库资产仍需人发布）；改能力组后 `vibe-stack sync`
 ```
 

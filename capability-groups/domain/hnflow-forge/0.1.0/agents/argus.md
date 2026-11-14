@@ -17,7 +17,8 @@ model: strong
 4. **独立性**：`judge` 的 preset 与祖先生产者是否不同；`verify.checks` 是否声明了 `judge` 却漏了 `judge.preset`。
 5. **编排形状**：单起点、单终点、无环；`gate` 三分支齐全；驳回路径是否靠 `onReject` 而不是回边。
 6. **依赖闭合**：流程提到的能力组/技能是否存在于当前工作区激活的组；`requires:` 是否写进 `description`。
-7. **可运行性**：输入 schema 与真实调用方是否匹配；`budget` / `deadline` / `onExpire` 是否给了合理值。
+7. **可运行性**：输入 schema 与真实调用方是否匹配；`budget` / `deadline` / `onExpire` 是否给了合理值；节点类型是否都在宿主注册表内。
+8. **自动化前提**（若流程要自动跑）：`hnflow triggers` 无解析错误、`hnflow-pass` 行启用、`run-completed` 链深 ≤5、触发器没有替代 `gate`/`request`，且流程里没写“什么时候跑”。
 
 ## 输出格式
 

@@ -90,9 +90,10 @@
 | 发布到渠道 | 流程 `gate` 收尾；实际发布由人 | 对外发布是人的授权 |
 | 指标定义文档、口径变更记录 | 项目文件 | 仅本团队成立 |
 | 本周日期范围、数据源路径 | `flow.input`（`required: ["week"]`） | 每次不同 |
+| 每周一定时启动 | 项目 `.hnflow/triggers.json`（`source: "cron"`, `cron: "0 2 * * 1"`，人写） | 触发时机不是流程内容；改时间不该动流程定义 |
 
 流程清单：`collect(agent 调工具) → normalize(merge 常量口径) → sanity(gate) → write(agent) → check(verify) → publish-approve(gate 终点)`。
-关键判据：**数字由脚本算，模型只写文字**；口径用 `merge.set` 冻结，不用 instruction 描述。
+关键判据：**数字由脚本算，模型只写文字**；口径用 `merge.set` 冻结，不用 instruction 描述；定时靠人写触发器，流程本身不写“每周”。
 
 ---
 
@@ -107,6 +108,7 @@
 | 校验全过但结果不能用 | 少了 `verify`/`judge`，或能力组未激活 | 加独立验收；在 `description` 写 `requires:` 并在交付说明提示激活 |
 | 门禁卡住几天没人处理 | `deadline` / `onExpire` 没写，或该用 `request` 却用了 `gate` | 补期限与过期策略；有交付物的用 `request` |
 | 同一段规范在两三条流程里重复 | 该进能力组 `rules` | 提到组里，流程里只引用 |
+| “每周一自动跑”写进 instruction | 触发时机写进了流程 | 人写 `.hnflow/triggers.json`；流程只描述一次运行内部 |
 
 ## 提炼：三条线
 

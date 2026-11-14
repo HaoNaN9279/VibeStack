@@ -1,12 +1,14 @@
-# HNFlow 定义速查（dsh-hnflow 0.6.0 / schemaVersion 2）
+# HNFlow 定义速查（dsh-hnflow 0.8.0 / schemaVersion 2）
 
-来源：HNFlow 项目的 `plugins/dsh`（`lib/flow/*`、`lib/tools.js`、`lib/author.js`、`lib/commands.js`、`lib/scheduler.js`）。插件升级时同步本文件。
+来源：HNFlow 项目的 `plugins/dsh`（`lib/flow/*`、`lib/tools.js`、`lib/author.js`、`lib/commands.js`、`lib/scheduler.js`、`lib/triggers.js`、`lib/outbox.js`）。插件升级时同步本文件。
 
 ## 定义外壳
 
 `{ schemaVersion: 2, flow: { id, name, description?, tags? }, input?, nodes[], edges[] }`
 
-## 六种节点
+## 内置六种节点
+
+宿主插件可通过 `registerNodeKind` 注册额外 kind；`hnflow_author schema` 的 `notes.nodeTypes` 是当前权威列表。额外 kind 必须有 `output`，执行方只允许“插件确定性”或“子 Agent”，不能是用户脚本。
 
 | 类型 | 执行者 | 必填 | 产出（下游可见的 output） |
 | --- | --- | --- | --- |
@@ -58,7 +60,7 @@
 
 ## 工具面
 
-`hnflow`（15 动作）：`list_flows`、`list_library`、`describe_flow`、`run`、`status`、`list_runs`、`cancel`、`resume`、`inbox`、`artifact`、`add_ref`、`remove_ref`、`rename_ref`、`pin`、`history`。
+`hnflow`（16 动作）：`list_flows`、`list_library`、`describe_flow`、`run`、`status`、`list_runs`、`cancel`、`resume`、`inbox`、`artifact`、`add_ref`、`remove_ref`、`rename_ref`、`pin`、`history`、`triggers`。
 
 `hnflow_author`（7 动作，**无 publish**）：`schema`、`validate`、`create`、`draft`、`promote`、`delete`、`rename`。
 
@@ -72,6 +74,22 @@
 | 回滚 | `/hnflow rollback <流程> rN confirm` |
 | 门禁裁决 / 人工交付 | 页面收件箱 / 原生问题卡 |
 | 旧格式导入 | `/hnflow import <名称> <工作区内文件>`（v2 定义原样通过，校验后落库 r1 并引用） |
+| 创建/修改自动触发 | 人直接编辑 `<workspace>/.hnflow/triggers.json`；`hnflow triggers` 只读 |
+
+## 自动化（`.hnflow/triggers.json`）
+
+```jsonc
+{ "triggers": [
+  { "id": "nightly",  "source": "cron", "cron": "0 2 * * *", "flow": "demo", "input": { "brief": "…" } },
+  { "id": "watch-src","source": "file", "watch": ["src/**/*.ts"], "flow": "demo", "debounceMs": 60000 },
+  { "id": "after-a",  "source": "run-completed", "after": "flow-a", "flow": "demo" }
+] }
+```
+
+- `cron` 五字段，按分钟幂等；`file` 用 `数量:mtime:大小` 签名并需静置 `debounceMs`；`run-completed` 的 `after` 写流程 id 或 `*`，链式最多 5 层。
+- 触发器只**新开** run：不接管授权、不跳 `gate`/`request`、不续跑旧 run。
+- 需要插件 `hnflow-pass` 行启用（默认 2 秒一次）；它同时做过期推进、副作用重放、停滞续推。
+- 解析错误逐条报在 `hnflow triggers` 与页面“自动化”面板，不会让整份文件失效。
 
 ## 作用域与存储
 
@@ -80,6 +98,9 @@ $DSH_HOME/hnflow/library/<目录>/<name>.flow.json          资产（asset + def
 $DSH_HOME/hnflow/library/.hnflow-revisions/<id>/rN.json    不可变快照 + lockfile
 <workspace>/.hnflow/flows.json                            引用（可钉 revision）
 <workspace>/.hnflow/overrides/<flowId>.flow.json          工作区草稿；local:true 且无引用 = 项目草稿
+<workspace>/.hnflow/triggers.json                         触发器（人写；缺失即不启用）
+<stateDir>/outbox.json                                    持久副作用队列（通知 / run-completed）
+<stateDir>/triggers-state.json                            触发器去重游标（上次触发键）
 ```
 
 项目草稿：可运行、改名、删除、`promote`；**不能** publish / pin / rollback（报 `local-flow`）。库资产改动走 `draft` + 人发布。
@@ -87,8 +108,10 @@ $DSH_HOME/hnflow/library/.hnflow-revisions/<id>/rN.json    不可变快照 + loc
 ## 执行语义
 
 - `run` 立即返回 `runId`；不要轮询、不要在对话里模拟节点。
-- `interrupted` 不会自动续跑，需显式 `resume`。
-- 并发受宿主 `maxParallel`（默认 3）与 `maxActiveSubagents`（8）约束。
+- 宿主重启后默认自动续跑（`resumeOnStart`，带 `recovery.reason = host-restarted`）；关掉时需显式 `resume`。
+- 并发受宿主 `maxParallel`（默认 3）与 `maxActiveSubagents`（8）约束；单次运行有墙钟预算 `runBudgetMs`（默认 6 小时），超时报 `run-budget-exceeded`。
+- 收件箱按阶段排序（返工 → 仲裁 → 裁决 → 交付），一次只突出最该人处理的一条；`inbox` 项带 `stageLabel` 与 `summary`。
+- `status` / 页面有 run 级 `health`（`ok` / `waiting-*` / `host-unavailable` / `run-budget-exceeded` / `node-failed` / `stalled`）与一句话说明。
 - 降级（fallback / arbitrate）会被标记，不静默通过；`verify` 的 `onInconclusive` 决定 judge 不确定时转门禁还是失败。
 - token 用量归因到节点。
 

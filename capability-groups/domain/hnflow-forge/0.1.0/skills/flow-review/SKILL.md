@@ -1,6 +1,6 @@
 ---
 name: flow-review
-description: 当流程定义与配套能力组写完、需要独立自查或评审时使用：flow 侧 12 项、能力组侧 8 项、一致性 5 项清单，报告格式与人工回归步骤。
+description: 当流程定义与配套能力组写完、需要独立自查或评审时使用：flow 侧 13 项、能力组侧 8 项、一致性 6 项清单，报告格式与人工回归步骤。
 ---
 
 # 审查（Review）
@@ -16,13 +16,15 @@ hnflow_author validate { definition }          # 或 validate { flow: "<名称>"
 vibe-stack tool run hnflow-forge -- lint <定义文件> --json
 # 能力组侧
 vibe-stack resolve --json --project <项目>
+# 自动化（HNFlow 模式；只读）
+hnflow triggers                                # 触发器、lastFiredAt、解析错误
 ```
 
 - `lint` 的错误码与插件同名，直接引用；`warnings` 里是离线拿不到的两件事：preset allowlist、本机模型层。
 - 两边结论不一致时**以插件为准**；工具跑不起来（无 `uv`）就在报告里写“未经静态校验”。
 - 工具首次运行会 `uv sync`（需要 `uv`，可能联网）。
 
-## flow 侧（12 项）
+## flow 侧（13 项）
 
 1. `validate` 返回 `ok: true`，无错误码。
 2. 恰一个起点、恰一个终点；多分支用 `merge` 收口。
@@ -36,6 +38,7 @@ vibe-stack resolve --json --project <项目>
 10. `budget` / `deadline` / `onExpire` 有合理值（不无限等，不无限重试）。
 11. `instruction` 只写任务与契约，手法用技能名引用；模板变量指向真实字段。
 12. 输入 schema 与真实调用方匹配（字段名、必填项）。
+13. 节点类型都在宿主注册表内（内置六种 + 插件 `registerNodeKind` 的额外 kind）。
 
 ## 能力组侧（8 项）
 
@@ -48,13 +51,14 @@ vibe-stack resolve --json --project <项目>
 7. `vibe-stack resolve --json --project <项目>` 无告警。
 8. 项目 `.vibestack/stack.json` 已加入该组并 `sync`。
 
-## 一致性（5 项）
+## 一致性（6 项）
 
 1. 流程里引用的技能名在激活的能力组里真实存在。
 2. 流程 `description` 的 `requires:` 与实际依赖一致。
 3. 节点 `preset` 在宿主 allowlist 内；`model` 层在本机存在（不确定就不写）。
 4. 边界没跑偏：流程里没有长篇“怎么做”，能力组里没有“什么时候跑”。
 5. 人的介入点齐全：该由人给的输入是 `request`/`gate`，不是 agent 节点。
+6. 若要求自动触发：`hnflow triggers` 无解析错误、`hnflow-pass` 行启用、`run-completed` 链深 ≤5，且触发器没有替代任何 `gate`/`request`。
 
 ## 报告格式
 
@@ -72,8 +76,9 @@ vibe-stack resolve --json --project <项目>
 1. hnflow_author create（项目草稿）
 2. hnflow run { flow, input }  → 立即拿到 runId，不轮询
 3. 页面或 /hnflow inbox 处理门禁 / 交付
-4. hnflow status { run_id } / artifact { artifact_id } 核对产物与 usage
+4. hnflow status { run_id } / artifact { artifact_id } 核对产物与 usage；页面运行详情看 health 说明（等人 / 等模型 / 宿主不可用 / 超预算）
 5. 通用资产：人执行 /hnflow publish <流程> confirm 后才进新 revision
+6. 自动触发：人写 `.hnflow/triggers.json` 后等一个 `passIntervalMs`，`hnflow triggers` 的 lastFiredAt 前进，run 的 `trigger.source` 与预期一致
 ```
 
 ## 常见失败归类
@@ -86,5 +91,7 @@ vibe-stack resolve --json --project <项目>
 | `preset-not-allowed` / `model-layer-unknown` | 猜了宿主配置；改回 allowlist / 已有层，或删掉 `model` |
 | 运行卡在 `needs_human` | 缺口该由 `request` 表达，或节点没开 `allowHuman` |
 | 质量差但校验通过 | 能力组缺失或 instruction 没引用技能 |
+| 定时任务没跑 / 只跑一次 | 触发器写进了流程，或 `.hnflow/triggers.json` 有解析错误、`hnflow-pass` 行没启用 |
+| run 到达 `run-budget-exceeded` | 墙钟预算不够或节点在等人；确认门禁/交付是否被忽略，再调 `runBudgetMs` |
 
 绝不把“校验通过”当成“流程正确”，也不代替人裁决或发布。
